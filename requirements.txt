@@ -1,0 +1,9 @@
+python-dateutil
+pandas
+matplotlib
+seaborn
+numpy
+scipy>=1.7.0
+scikit-learn
+joblib
+plotly
