@@ -748,7 +748,7 @@ def suite():
     test_suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestLabelResolutionController))
     test_suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestLabelResolutionVisualizer))
     test_suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestFeatureRunnerIntegration))
-
+    test_suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestDateTimeHelper))
     return test_suite
 
 
