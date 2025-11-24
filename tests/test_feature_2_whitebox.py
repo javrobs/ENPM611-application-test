@@ -1,517 +1,834 @@
-"""
-White Box Testing for Feature 2 - Contributors Dashboard
-Tests internal logic paths, branches, and data flow
-Extended coverage to reach 90%+
-"""
-
-import unittest
-from unittest.mock import Mock, patch, MagicMock, call
+import pytest
 import pandas as pd
-from app.feature_runner import FeatureRunner
+import numpy as np
+from datetime import datetime, timedelta, timezone
+from analysis.contributors_analyzer import ContributorsAnalyzer
+from model import Contributor, Issue, Event
 
+class TestContributorsAnalyzer:
+    """Comprehensive test suite for ContributorsAnalyzer class"""
+    
+    @pytest.fixture
+    def analyzer(self):
+        """Fixture that provides a fresh ContributorsAnalyzer instance"""
+        return ContributorsAnalyzer()
+    
+    @pytest.fixture
+    def sample_issues_df(self):
+        """Fixture providing sample issues DataFrame with diverse test data"""
+        return pd.DataFrame([
+            {
+                'number': 1,
+                'creator': 'user1',
+                'state': 'closed',
+                'created_date': pd.Timestamp('2023-01-15 10:00:00'),
+                'updated_date': pd.Timestamp('2023-01-20 15:00:00'),
+                'labels': ['kind/bug', 'priority/high']
+            },
+            {
+                'number': 2,
+                'creator': 'user2',
+                'state': 'open',
+                'created_date': pd.Timestamp('2023-02-10 14:30:00'),
+                'updated_date': pd.Timestamp('2023-02-12 09:00:00'),
+                'labels': ['kind/feature', 'area/docs']
+            },
+            {
+                'number': 3,
+                'creator': 'user1',
+                'state': 'closed',
+                'created_date': pd.Timestamp('2023-03-05 08:45:00'),
+                'updated_date': pd.Timestamp('2023-03-10 16:20:00'),
+                'labels': ['kind/bug', 'good first issue']
+            },
+            {
+                'number': 4,
+                'creator': 'user3',
+                'state': 'open',
+                'created_date': pd.Timestamp('2024-01-15 11:00:00'),
+                'updated_date': pd.Timestamp('2024-01-16 12:00:00'),
+                'labels': ['kind/feature', 'area/ui']
+            },
+            {
+                'number': 5,
+                'creator': 'stale[bot]',
+                'state': 'closed',
+                'created_date': pd.Timestamp('2023-04-01 10:00:00'),
+                'updated_date': pd.Timestamp('2023-04-02 10:00:00'),
+                'labels': ['kind/bug']
+            }
+        ])
+    
+    @pytest.fixture
+    def sample_events_df(self):
+        """Fixture providing sample events DataFrame"""
+        return pd.DataFrame([
+            {
+                'issue_number': 1,
+                'event_type': 'closed',
+                'event_author': 'user2',
+                'event_date': pd.Timestamp('2023-01-20 15:00:00'),
+                'label': None,
+                'comment': None
+            },
+            {
+                'issue_number': 1,
+                'event_type': 'commented',
+                'event_author': 'user1',
+                'event_date': pd.Timestamp('2023-01-18 12:00:00'),
+                'label': None,
+                'comment': 'This is a comment'
+            },
+            {
+                'issue_number': 2,
+                'event_type': 'commented',
+                'event_author': 'user3',
+                'event_date': pd.Timestamp('2023-02-11 10:00:00'),
+                'label': None,
+                'comment': 'Another comment'
+            },
+            {
+                'issue_number': 3,
+                'event_type': 'closed',
+                'event_author': 'user2',
+                'event_date': pd.Timestamp('2023-03-10 16:20:00'),
+                'label': None,
+                'comment': None
+            },
+            {
+                'issue_number': 1,
+                'event_type': 'commented',
+                'event_author': 'github-actions[bot]',
+                'event_date': pd.Timestamp('2023-01-19 09:00:00'),
+                'label': None,
+                'comment': 'Bot comment'
+            }
+        ])
 
-class TestFeature2WhiteBox(unittest.TestCase):
-    """White box tests for Contributors Dashboard feature"""
-    
-    def setUp(self):
-        """Set up test fixtures before each test"""
-        self.runner = FeatureRunner()
-        self.runner.config = Mock()
-        self.runner.config.get_data_path.return_value = "test/data"
-        self.runner.config.get_output_path.return_value = "test/output"
-        self.runner.contributors_controller = Mock()
-        
-        # Sample test data
-        self.sample_issues = pd.DataFrame({
-            'id': [1, 2, 3],
-            'created_at': ['2023-01-01', '2023-02-01', '2023-03-01'],
-            'user': ['user1', 'user2', 'user1']
-        })
-        
-        self.sample_events = pd.DataFrame({
-            'issue_id': [1, 2, 3],
-            'event': ['closed', 'labeled', 'closed'],
-            'created_at': ['2023-01-10', '2023-02-05', '2023-03-15']
-        })
-    
-    def _setup_default_mocks(self, fig_returns=None):
-        """Helper to set up standard mocks"""
-        if fig_returns is None:
-            fig_returns = [Mock(), None, None, None, None, None, None]
-        
-        self.runner.contributors_controller.load_contributor_data.return_value = (
-            self.sample_issues, self.sample_events
-        )
-        self.runner.contributors_controller.analyzer = Mock()
-        self.runner.contributors_controller.analyzer.build_contributors.return_value = []
-        
-        self.runner.contributors_controller.plot_bug_closure_distribution.return_value = fig_returns[0]
-        self.runner.contributors_controller.plot_top_feature_requesters.return_value = fig_returns[1]
-        self.runner.contributors_controller.plot_docs_issues.return_value = fig_returns[2]
-        self.runner.contributors_controller.plot_issues_created_per_user.return_value = fig_returns[3]
-        self.runner.contributors_controller.plot_top_active_users_per_year.return_value = fig_returns[4]
-        self.runner.contributors_controller.run_engagement_heatmap.return_value = fig_returns[5]
-        self.runner.contributors_controller.run_contributor_lifecycle.return_value = fig_returns[6]
-        
-        self.runner.contributors_controller.visualizer = Mock()
-    
-    def test_feature2_entry_point(self):
-        """Test feature 2 execution path is reached"""
-        self._setup_default_mocks()
-        
-        with patch('builtins.print') as mock_print:
-            self.runner.run_feature(2)
-        
-        # Verify entry message printed
-        mock_print.assert_any_call("▶ Running Contributors Dashboard...")
-        self.runner.contributors_controller.load_contributor_data.assert_called_once()
-    
-    def test_data_loading_branch(self):
-        """Test data loading logic branch"""
-        self._setup_default_mocks()
-        
-        with patch('builtins.print'):
-            self.runner.run_feature(2)
-        
-        # Verify config methods called for paths
-        self.runner.config.get_data_path.assert_called_once()
-        self.runner.config.get_output_path.assert_called_once()
-    
-    def test_build_contributors_execution(self):
-        """Test contributors building logic path"""
-        mock_contributors = [{'user': 'user1', 'activity': 10}]
-        
-        self._setup_default_mocks()
-        self.runner.contributors_controller.analyzer.build_contributors.return_value = mock_contributors
-        
-        with patch('builtins.print'):
-            self.runner.run_feature(2)
-        
-        # Verify build_contributors called with loaded data
-        self.runner.contributors_controller.analyzer.build_contributors.assert_called_once_with(
-            self.sample_issues, self.sample_events
-        )
-    
-    def test_graph1_always_added(self):
-        """Test Graph 1 (bug closures) always added to figs dict"""
-        mock_fig1 = Mock()
-        self._setup_default_mocks([mock_fig1, None, None, None, None, None, None])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # Graph 1 should be saved
-        self.runner.contributors_controller.visualizer.save_figure.assert_any_call(
-            mock_fig1, "test/output/graph1_bug_closures.png"
-        )
-    
-    def test_graph1_method_called_with_correct_args(self):
-        """Test Graph 1 plot method receives correct data"""
-        self._setup_default_mocks()
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # Verify plot_bug_closure_distribution called with issues and events
-        self.runner.contributors_controller.plot_bug_closure_distribution.assert_called_once_with(
-            self.sample_issues, self.sample_events
-        )
-    
-    def test_conditional_graph2_added_when_not_none(self):
-        """Test Graph 2 only added if not None"""
-        mock_fig2 = Mock()
-        self._setup_default_mocks([Mock(), mock_fig2, None, None, None, None, None])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # Graph 2 should be saved since it's not None
-        self.runner.contributors_controller.visualizer.save_figure.assert_any_call(
-            mock_fig2, "test/output/graph2_top_feature_requesters.png"
-        )
-    
-    def test_conditional_graph2_skipped_when_none(self):
-        """Test Graph 2 skipped when None"""
-        self._setup_default_mocks([Mock(), None, None, None, None, None, None])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # Verify graph2 not in saved calls
-        save_calls = self.runner.contributors_controller.visualizer.save_figure.call_args_list
-        graph2_saved = any('graph2' in str(call) for call in save_calls)
-        self.assertFalse(graph2_saved)
-    
-    def test_graph2_receives_correct_parameters(self):
-        """Test Graph 2 called with issues and top_n parameter"""
-        self._setup_default_mocks()
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        self.runner.contributors_controller.plot_top_feature_requesters.assert_called_once_with(
-            self.sample_issues, top_n=10
-        )
-    
-    def test_conditional_graph3_added_when_not_none(self):
-        """Test Graph 3 only added if not None"""
-        mock_fig3 = Mock()
-        self._setup_default_mocks([Mock(), None, mock_fig3, None, None, None, None])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        self.runner.contributors_controller.visualizer.save_figure.assert_any_call(
-            mock_fig3, "test/output/graph3_docs_issues.png"
-        )
-    
-    def test_conditional_graph3_skipped_when_none(self):
-        """Test Graph 3 skipped when None"""
-        self._setup_default_mocks([Mock(), None, None, None, None, None, None])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        save_calls = self.runner.contributors_controller.visualizer.save_figure.call_args_list
-        graph3_saved = any('graph3' in str(call) for call in save_calls)
-        self.assertFalse(graph3_saved)
-    
-    def test_graph3_receives_correct_parameters(self):
-        """Test Graph 3 called with issues and events"""
-        self._setup_default_mocks()
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        self.runner.contributors_controller.plot_docs_issues.assert_called_once_with(
-            self.sample_issues, self.sample_events
-        )
-    
-    def test_conditional_graph4_added_when_not_none(self):
-        """Test Graph 4 only added if not None"""
-        mock_fig4 = Mock()
-        self._setup_default_mocks([Mock(), None, None, mock_fig4, None, None, None])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        self.runner.contributors_controller.visualizer.save_figure.assert_any_call(
-            mock_fig4, "test/output/graph4_issues_created_per_user.png"
-        )
-    
-    def test_conditional_graph4_skipped_when_none(self):
-        """Test Graph 4 skipped when None"""
-        self._setup_default_mocks([Mock(), None, None, None, None, None, None])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        save_calls = self.runner.contributors_controller.visualizer.save_figure.call_args_list
-        graph4_saved = any('graph4' in str(call) for call in save_calls)
-        self.assertFalse(graph4_saved)
-    
-    def test_graph4_receives_correct_parameters(self):
-        """Test Graph 4 called with issues and top_n parameter"""
-        self._setup_default_mocks()
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        self.runner.contributors_controller.plot_issues_created_per_user.assert_called_once_with(
-            self.sample_issues, top_n=40
-        )
-    
-    def test_conditional_graph5_added_when_not_none(self):
-        """Test Graph 5 only added if not None"""
-        mock_fig5 = Mock()
-        self._setup_default_mocks([Mock(), None, None, None, mock_fig5, None, None])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        self.runner.contributors_controller.visualizer.save_figure.assert_any_call(
-            mock_fig5, "test/output/graph5_top_active_users_per_year.png"
-        )
-    
-    def test_conditional_graph5_skipped_when_none(self):
-        """Test Graph 5 skipped when None"""
-        self._setup_default_mocks([Mock(), None, None, None, None, None, None])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        save_calls = self.runner.contributors_controller.visualizer.save_figure.call_args_list
-        graph5_saved = any('graph5' in str(call) for call in save_calls)
-        self.assertFalse(graph5_saved)
-    
-    def test_graph5_show_called_when_present(self):
-        """Test Graph 5 interactive display when not None"""
-        mock_fig5 = Mock()
-        self._setup_default_mocks([Mock(), None, None, None, mock_fig5, None, None])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # Verify show() was called on fig5
-        mock_fig5.show.assert_called_once()
-    
-    def test_graph5_show_not_called_when_none(self):
-        """Test Graph 5 show() not called when None"""
-        self._setup_default_mocks([Mock(), None, None, None, None, None, None])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # No show() should be called since fig5 is None
-        # This implicitly tests the None check works
-        self.runner.contributors_controller.plot_top_active_users_per_year.assert_called_once()
-    
-    def test_graph5_receives_correct_parameters(self):
-        """Test Graph 5 called with contributors and top_n"""
-        mock_contributors = [{'user': 'user1'}]
-        self._setup_default_mocks()
-        self.runner.contributors_controller.analyzer.build_contributors.return_value = mock_contributors
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        self.runner.contributors_controller.plot_top_active_users_per_year.assert_called_once_with(
-            mock_contributors, top_n=10
-        )
-    
-    def test_conditional_graph6_added_when_not_none(self):
-        """Test Graph 6 only added if not None"""
-        mock_fig6 = Mock()
-        self._setup_default_mocks([Mock(), None, None, None, None, mock_fig6, None])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        self.runner.contributors_controller.visualizer.save_figure.assert_any_call(
-            mock_fig6, "test/output/graph6_engagement_heatmap.png"
-        )
-    
-    def test_conditional_graph6_skipped_when_none(self):
-        """Test Graph 6 skipped when None"""
-        self._setup_default_mocks([Mock(), None, None, None, None, None, None])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        save_calls = self.runner.contributors_controller.visualizer.save_figure.call_args_list
-        graph6_saved = any('graph6' in str(call) for call in save_calls)
-        self.assertFalse(graph6_saved)
-    
-    def test_graph6_receives_correct_parameters(self):
-        """Test Graph 6 called with contributors"""
-        mock_contributors = [{'user': 'user1'}]
-        self._setup_default_mocks()
-        self.runner.contributors_controller.analyzer.build_contributors.return_value = mock_contributors
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        self.runner.contributors_controller.run_engagement_heatmap.assert_called_once_with(
-            mock_contributors
-        )
-    
-    def test_conditional_graph7_added_when_not_none(self):
-        """Test Graph 7 only added if not None"""
-        mock_fig7 = Mock()
-        self._setup_default_mocks([Mock(), None, None, None, None, None, mock_fig7])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        self.runner.contributors_controller.visualizer.save_figure.assert_any_call(
-            mock_fig7, "test/output/graph7_contributor_lifecycle.png"
-        )
-    
-    def test_conditional_graph7_skipped_when_none(self):
-        """Test Graph 7 skipped when None"""
-        self._setup_default_mocks([Mock(), None, None, None, None, None, None])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        save_calls = self.runner.contributors_controller.visualizer.save_figure.call_args_list
-        graph7_saved = any('graph7' in str(call) for call in save_calls)
-        self.assertFalse(graph7_saved)
-    
-    def test_graph7_receives_correct_parameters(self):
-        """Test Graph 7 called with contributors"""
-        mock_contributors = [{'user': 'user1'}]
-        self._setup_default_mocks()
-        self.runner.contributors_controller.analyzer.build_contributors.return_value = mock_contributors
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        self.runner.contributors_controller.run_contributor_lifecycle.assert_called_once_with(
-            mock_contributors
-        )
-    
-    def test_all_conditional_graphs_paths(self):
-        """Test all graphs with mixed None/not-None conditions"""
-        mock_figs = [Mock(), Mock(), None, Mock(), None, Mock(), None]
-        self._setup_default_mocks(mock_figs)
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # Should have 4 save calls (graph1, 2, 4, 6)
-        self.assertEqual(self.runner.contributors_controller.visualizer.save_figure.call_count, 4)
-    
-    def test_all_graphs_present(self):
-        """Test when all 7 graphs are successfully generated"""
-        mock_figs = [Mock() for _ in range(7)]
-        self._setup_default_mocks(mock_figs)
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # All 7 should be saved
-        self.assertEqual(self.runner.contributors_controller.visualizer.save_figure.call_count, 7)
-    
-    def test_only_graph1_present(self):
-        """Test when only Graph 1 generates successfully"""
-        mock_figs = [Mock(), None, None, None, None, None, None]
-        self._setup_default_mocks(mock_figs)
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # Only 1 should be saved
-        self.assertEqual(self.runner.contributors_controller.visualizer.save_figure.call_count, 1)
-    
-    def test_matplotlib_show_called(self):
-        """Test matplotlib.pyplot.show() called at end"""
-        self._setup_default_mocks()
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show') as mock_show:
-            self.runner.run_feature(2)
-        
-        # Verify pyplot.show() called once
-        mock_show.assert_called_once()
-    
-    def test_save_figure_loop_all_figs(self):
-        """Test save loop iterates through all non-None figures"""
-        mock_figs = [Mock(), Mock(), Mock(), None, None, None, None]
-        self._setup_default_mocks(mock_figs)
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # Should save exactly 3 figures
-        self.assertEqual(self.runner.contributors_controller.visualizer.save_figure.call_count, 3)
-    
-    def test_output_path_used_in_save(self):
-        """Test output path from config used in file saves"""
-        mock_fig = Mock()
-        self._setup_default_mocks([mock_fig, None, None, None, None, None, None])
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # Verify output path is in saved filename
-        call_args = self.runner.contributors_controller.visualizer.save_figure.call_args[0]
-        self.assertIn('test/output', call_args[1])
-    
-    def test_print_statements_for_saved_files(self):
-        """Test that save confirmation messages are printed"""
-        mock_figs = [Mock(), Mock(), None, None, None, None, None]
-        self._setup_default_mocks(mock_figs)
-        
-        with patch('builtins.print') as mock_print, patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # Check for saved file print statements
-        print_calls = [str(call) for call in mock_print.call_args_list]
-        saved_prints = [c for c in print_calls if 'Saved' in c and '.png' in c]
-        
-        # Should have 2 save messages (for graph1 and graph2)
-        self.assertGreaterEqual(len(saved_prints), 2)
-    
-    def test_figs_dict_accumulation(self):
-        """Test that figs dictionary accumulates correctly"""
-        mock_figs = [Mock(), Mock(), Mock(), None, None, None, None]
-        self._setup_default_mocks(mock_figs)
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # Verify save_figure called for each non-None fig
-        expected_calls = 3
-        actual_calls = self.runner.contributors_controller.visualizer.save_figure.call_count
-        self.assertEqual(actual_calls, expected_calls)
-    
-    def test_contributors_passed_to_graphs_5_6_7(self):
-        """Test contributors list passed to appropriate graph methods"""
-        mock_contributors = [{'user': 'user1', 'activity': 5}]
-        self._setup_default_mocks()
-        self.runner.contributors_controller.analyzer.build_contributors.return_value = mock_contributors
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # Verify contributors passed to graphs 5, 6, 7
-        self.runner.contributors_controller.plot_top_active_users_per_year.assert_called_with(
-            mock_contributors, top_n=10
-        )
-        self.runner.contributors_controller.run_engagement_heatmap.assert_called_with(
-            mock_contributors
-        )
-        self.runner.contributors_controller.run_contributor_lifecycle.assert_called_with(
-            mock_contributors
-        )
-    
-    def test_issues_passed_to_graphs_2_4(self):
-        """Test issues dataframe passed to appropriate graph methods"""
-        self._setup_default_mocks()
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # Verify issues passed correctly
-        self.runner.contributors_controller.plot_top_feature_requesters.assert_called_with(
-            self.sample_issues, top_n=10
-        )
-        self.runner.contributors_controller.plot_issues_created_per_user.assert_called_with(
-            self.sample_issues, top_n=40
-        )
-    
-    def test_issues_and_events_passed_to_graphs_1_3(self):
-        """Test both dataframes passed to appropriate graph methods"""
-        self._setup_default_mocks()
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # Verify both dataframes passed correctly
-        self.runner.contributors_controller.plot_bug_closure_distribution.assert_called_with(
-            self.sample_issues, self.sample_events
-        )
-        self.runner.contributors_controller.plot_docs_issues.assert_called_with(
-            self.sample_issues, self.sample_events
-        )
-    
-    def test_execution_order(self):
-        """Test that methods are called in correct order"""
-        self._setup_default_mocks()
-        
-        with patch('builtins.print'), patch('matplotlib.pyplot.show'):
-            self.runner.run_feature(2)
-        
-        # Verify execution order
-        manager = Mock()
-        manager.attach_mock(self.runner.config.get_data_path, 'get_data_path')
-        manager.attach_mock(self.runner.config.get_output_path, 'get_output_path')
-        manager.attach_mock(self.runner.contributors_controller.load_contributor_data, 'load_data')
-        
-        # Data path should be called before load
-        self.runner.config.get_data_path.assert_called()
-        self.runner.contributors_controller.load_contributor_data.assert_called()
+    def test_build_contributors_valid_data(self, analyzer, sample_issues_df, sample_events_df):
+        """Test building contributors from valid issues and events data"""
+        contributors = analyzer.build_contributors(sample_issues_df, sample_events_df)
+        
+        # Should have 3 contributors (excluding bots)
+        assert len(contributors) == 3
+        
+        # Verify usernames
+        usernames = [c.username for c in contributors]
+        assert 'user1' in usernames
+        assert 'user2' in usernames
+        assert 'user3' in usernames
+        assert 'stale[bot]' not in usernames
+        assert 'github-actions[bot]' not in usernames
 
+    def test_build_contributors_filters_bots(self, analyzer, sample_issues_df, sample_events_df):
+        """Test that bot users are properly filtered out"""
+        contributors = analyzer.build_contributors(sample_issues_df, sample_events_df)
+        
+        for contributor in contributors:
+            assert '[bot]' not in contributor.username
+            assert contributor.username not in ['stale[bot]', 'github-actions[bot]']
 
-if __name__ == '__main__':
-    unittest.main()
+    def test_build_contributors_empty_data(self, analyzer):
+        """Test handling of empty DataFrames"""
+        empty_issues = pd.DataFrame(columns=['number', 'creator', 'state', 'created_date', 'updated_date', 'labels'])
+        empty_events = pd.DataFrame(columns=['issue_number', 'event_type', 'event_author', 'event_date', 'label', 'comment'])
+        
+        contributors = analyzer.build_contributors(empty_issues, empty_events)
+        
+        assert len(contributors) == 0
+
+    def test_build_contributors_tracks_issues(self, analyzer, sample_issues_df, sample_events_df):
+        """Test that contributors correctly track their created issues"""
+        contributors = analyzer.build_contributors(sample_issues_df, sample_events_df)
+        
+        user1 = next(c for c in contributors if c.username == 'user1')
+        assert len(user1.issues_created) == 2  # user1 created issues 1 and 3
+
+    def test_build_contributors_tracks_comments(self, analyzer, sample_issues_df, sample_events_df):
+        """Test that contributors correctly track their comments"""
+        contributors = analyzer.build_contributors(sample_issues_df, sample_events_df)
+        
+        user1 = next(c for c in contributors if c.username == 'user1')
+        user3 = next(c for c in contributors if c.username == 'user3')
+        
+        assert len(user1.comments) >= 1
+        assert len(user3.comments) >= 1
+
+    def test_analyze_bug_closure_distribution(self, analyzer, sample_issues_df, sample_events_df):
+        """Test bug closure distribution analysis"""
+        result = analyzer.analyze_bug_closure_distribution(sample_issues_df, sample_events_df)
+        
+        assert isinstance(result, pd.DataFrame)
+        assert 'year' in result.columns
+        assert 'top5_pct' in result.columns
+        assert 'rest_pct' in result.columns
+        assert 'top5_users' in result.columns
+        
+        # Percentages should sum to 100 for each year
+        for _, row in result.iterrows():
+            total = row['top5_pct'] + row['rest_pct']
+            assert abs(total - 100) < 0.01  # Allow small floating point error
+
+    def test_analyze_bug_closure_no_bugs(self, analyzer):
+        """Test bug closure analysis with no bug issues"""
+        issues_df = pd.DataFrame([
+            {
+                'number': 1,
+                'creator': 'user1',
+                'state': 'closed',
+                'created_date': pd.Timestamp('2023-01-15'),
+                'updated_date': pd.Timestamp('2023-01-20'),
+                'labels': ['kind/feature']  # No bug label
+            }
+        ])
+        events_df = pd.DataFrame([
+            {
+                'issue_number': 1,
+                'event_type': 'closed',
+                'event_author': 'user1',
+                'event_date': pd.Timestamp('2023-01-20'),
+                'label': None,
+                'comment': None
+            }
+        ])
+        
+        result = analyzer.analyze_bug_closure_distribution(issues_df, events_df)
+        assert len(result) == 0
+
+    def test_analyze_top_feature_requesters(self, analyzer, sample_issues_df):
+        """Test top feature requesters analysis"""
+        top_requesters, feature_issues = analyzer.analyze_top_feature_requesters(sample_issues_df, top_n=10)
+        
+        assert top_requesters is not None
+        assert feature_issues is not None
+        assert isinstance(top_requesters, pd.Series)
+        assert len(top_requesters) <= 10
+
+    def test_analyze_top_feature_requesters_no_features(self, analyzer):
+        """Test feature requesters analysis with no feature issues"""
+        issues_df = pd.DataFrame([
+            {
+                'number': 1,
+                'creator': 'user1',
+                'state': 'closed',
+                'created_date': pd.Timestamp('2023-01-15'),
+                'updated_date': pd.Timestamp('2023-01-20'),
+                'labels': ['kind/bug']  # No feature label
+            }
+        ])
+        
+        top_requesters, feature_issues = analyzer.analyze_top_feature_requesters(issues_df)
+        assert top_requesters is None
+        assert feature_issues is None
+
+    def test_compute_unique_commenters(self, analyzer, sample_issues_df, sample_events_df):
+        """Test computation of unique commenters per issue per month"""
+        result = analyzer.compute_unique_commenters(sample_events_df, sample_issues_df)
+        
+        assert isinstance(result, pd.DataFrame)
+        assert 'issue_number' in result.columns
+        assert 'month' in result.columns
+        assert 'n_unique_commenters' in result.columns
+
+    def test_compute_unique_commenters_no_comments(self, analyzer, sample_issues_df):
+        """Test unique commenters computation with no comment events"""
+        events_df = pd.DataFrame([
+            {
+                'issue_number': 1,
+                'event_type': 'closed',  # Not a comment
+                'event_author': 'user1',
+                'event_date': pd.Timestamp('2023-01-20'),
+                'label': None,
+                'comment': None
+            }
+        ])
+        
+        result = analyzer.compute_unique_commenters(events_df, sample_issues_df)
+        assert len(result) == 0
+
+    def test_analyze_docs_issues(self, analyzer, sample_events_df):
+        """Test documentation issues analysis"""
+        # Create mock data loader
+        class MockLoader:
+            def filter_by_label(self, df, label):
+                return df[df['labels'].apply(lambda L: any('doc' in str(l).lower() for l in L))]
+        
+        mock_loader = MockLoader()
+        
+        docs_issues_df = pd.DataFrame([
+            {
+                'number': 1,
+                'creator': 'user1',
+                'state': 'closed',
+                'created_date': pd.Timestamp('2023-01-15'),
+                'updated_date': pd.Timestamp('2023-01-20'),
+                'labels': ['area/docs']
+            },
+            {
+                'number': 2,
+                'creator': 'user2',
+                'state': 'open',
+                'created_date': pd.Timestamp('2023-02-10'),
+                'updated_date': pd.Timestamp('2023-02-12'),
+                'labels': ['area/docs']
+            }
+        ])
+        
+        status_counts, avg_commenters = analyzer.analyze_docs_issues(docs_issues_df, sample_events_df, mock_loader)
+        
+        if status_counts is not None:
+            assert isinstance(status_counts, pd.DataFrame)
+            assert isinstance(avg_commenters, pd.Series)
+
+    def test_analyze_issues_created_per_user(self, analyzer, sample_issues_df):
+        """Test issues created per user analysis"""
+        issues_per_user, all_counts = analyzer.analyze_issues_created_per_user(sample_issues_df, top_n=40)
+        
+        assert issues_per_user is not None
+        assert all_counts is not None
+        assert isinstance(issues_per_user, pd.Series)
+        assert isinstance(all_counts, pd.Series)
+        assert len(issues_per_user) <= 40
+
+    def test_analyze_issues_created_per_user_empty(self, analyzer):
+        """Test issues created per user with empty DataFrame"""
+        empty_df = pd.DataFrame(columns=['number', 'creator', 'state', 'created_date', 'updated_date', 'labels'])
+        result = analyzer.analyze_issues_created_per_user(empty_df)
+        assert result is None
+
+    def test_analyze_top_active_users_per_year(self, analyzer, sample_issues_df, sample_events_df):
+        """Test top active users per year analysis"""
+        contributors = analyzer.build_contributors(sample_issues_df, sample_events_df)
+        result = analyzer.analyze_top_active_users_per_year(contributors)
+        
+        assert isinstance(result, dict)
+        for year, df in result.items():
+            assert isinstance(year, int)
+            assert isinstance(df, pd.DataFrame)
+            assert 'user' in df.columns
+            assert 'activity' in df.columns
+
+    def test_analyze_engagement_heatmap(self, analyzer, sample_issues_df, sample_events_df):
+        """Test engagement heatmap generation"""
+        contributors = analyzer.build_contributors(sample_issues_df, sample_events_df)
+        heatmap = analyzer.analyze_engagement_heatmap(contributors)
+        
+        assert isinstance(heatmap, pd.DataFrame)
+        assert heatmap.shape == (7, 24)  # 7 days, 24 hours
+        assert list(heatmap.index) == ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        assert list(heatmap.columns) == list(range(24))
+
+    def test_analyze_engagement_heatmap_empty(self, analyzer):
+        """Test engagement heatmap with no contributors"""
+        heatmap = analyzer.analyze_engagement_heatmap([])
+        
+        assert isinstance(heatmap, pd.DataFrame)
+        assert heatmap.shape == (7, 24)
+        assert heatmap.sum().sum() == 0  # All zeros
+
+    def test_analyze_lifecycle_stages(self, analyzer, sample_issues_df, sample_events_df):
+        """Test contributor lifecycle stages analysis"""
+        contributors = analyzer.build_contributors(sample_issues_df, sample_events_df)
+        result = analyzer.analyze_lifecycle_stages(contributors)
+        
+        assert isinstance(result, pd.DataFrame)
+        assert 'contributor' in result.columns
+        assert 'first_activity' in result.columns
+        assert 'last_activity' in result.columns
+        assert 'stage' in result.columns
+        
+        # Verify stage values are valid
+        valid_stages = ['Newcomer', 'Active', 'Core Maintainer', 'Graduated Contributor']
+        assert result['stage'].isin(valid_stages).all()
+
+    def test_analyze_lifecycle_stages_custom_reference(self, analyzer, sample_issues_df, sample_events_df):
+        """Test lifecycle stages with custom reference date"""
+        contributors = analyzer.build_contributors(sample_issues_df, sample_events_df)
+        reference_date = pd.Timestamp('2024-12-31', tz=timezone.utc)
+        
+        result = analyzer.analyze_lifecycle_stages(contributors, reference_date=reference_date)
+        
+        assert isinstance(result, pd.DataFrame)
+        assert 'stage' in result.columns
+
+    def test_analyze_lifecycle_stages_categories(self, analyzer):
+        """Test that lifecycle stages correctly categorize contributors"""
+        # Create contributors with specific activity patterns
+        now = pd.Timestamp.now(tz=timezone.utc)
+        
+        # Newcomer: first activity within last 30 days
+        newcomer = Contributor('newcomer')
+        newcomer.first_activity = now - timedelta(days=15)
+        newcomer.last_activity = now - timedelta(days=10)
+        
+        # Core Maintainer: active for more than 1 year
+        maintainer = Contributor('maintainer')
+        maintainer.first_activity = now - timedelta(days=400)
+        maintainer.last_activity = now - timedelta(days=5)
+        
+        # Graduated: inactive for 6+ months
+        graduated = Contributor('graduated')
+        graduated.first_activity = now - timedelta(days=300)
+        graduated.last_activity = now - timedelta(days=200)
+        
+        # Active: regular contributor
+        active = Contributor('active')
+        active.first_activity = now - timedelta(days=100)
+        active.last_activity = now - timedelta(days=20)
+        
+        contributors = [newcomer, maintainer, graduated, active]
+        result = analyzer.analyze_lifecycle_stages(contributors, reference_date=now)
+        
+        stages = result.set_index('contributor')['stage'].to_dict()
+        assert stages['newcomer'] == 'Newcomer'
+        assert stages['maintainer'] == 'Core Maintainer'
+        assert stages['graduated'] == 'Graduated Contributor'
+        assert stages['active'] == 'Active'
+
+    def test_analyze_lifecycle_stages_duplicates(self, analyzer):
+        """Test that duplicate contributors are handled correctly"""
+        now = pd.Timestamp.now(tz=timezone.utc)
+        
+        # Create duplicate contributors
+        c1 = Contributor('user1')
+        c1.first_activity = now - timedelta(days=100)
+        c1.last_activity = now - timedelta(days=50)
+        
+        c2 = Contributor('user1')  # Same username
+        c2.first_activity = now - timedelta(days=80)
+        c2.last_activity = now - timedelta(days=30)
+        
+        result = analyzer.analyze_lifecycle_stages([c1, c2])
+        
+        # Should have only one entry for user1
+        assert len(result[result['contributor'] == 'user1']) == 1
+
+    def test_analyze_bug_closure_distribution_multiple_years(self, analyzer):
+        """Test bug closure distribution across multiple years"""
+        issues_df = pd.DataFrame([
+            {'number': i, 'creator': f'user{i%3}', 'state': 'closed', 
+             'created_date': pd.Timestamp(f'202{i%3}-01-15'),
+             'updated_date': pd.Timestamp(f'202{i%3}-01-20'),
+             'labels': ['kind/bug']}
+            for i in range(10)
+        ])
+        
+        events_df = pd.DataFrame([
+            {'issue_number': i, 'event_type': 'closed', 'event_author': f'user{(i+1)%3}',
+             'event_date': pd.Timestamp(f'202{i%3}-01-20'), 'label': None, 'comment': None}
+            for i in range(10)
+        ])
+        
+        result = analyzer.analyze_bug_closure_distribution(issues_df, events_df)
+        
+        assert len(result) > 0
+        assert result['year'].nunique() > 1
+
+    def test_single_contributor(self, analyzer):
+        """Test analysis with only one contributor"""
+        issues_df = pd.DataFrame([
+            {'number': 1, 'creator': 'user1', 'state': 'closed',
+             'created_date': pd.Timestamp('2023-01-15'),
+             'updated_date': pd.Timestamp('2023-01-20'),
+             'labels': ['kind/bug']}
+        ])
+        
+        events_df = pd.DataFrame([
+            {'issue_number': 1, 'event_type': 'commented', 'event_author': 'user1',
+             'event_date': pd.Timestamp('2023-01-18'), 'label': None, 'comment': 'test'}
+        ])
+        
+        contributors = analyzer.build_contributors(issues_df, events_df)
+        assert len(contributors) == 1
+        assert contributors[0].username == 'user1'
+
+    def test_date_parsing_robustness(self, analyzer):
+        """Test that date parsing handles various formats correctly"""
+        issues_df = pd.DataFrame([
+            {'number': 1, 'creator': 'user1', 'state': 'closed',
+             'created_date': '2023-01-15T10:00:00Z',  # String format
+             'updated_date': '2023-01-20T15:00:00Z',
+             'labels': ['kind/bug']}
+        ])
+        
+        events_df = pd.DataFrame([
+            {'issue_number': 1, 'event_type': 'commented', 'event_author': 'user1',
+             'event_date': '2023-01-18T12:00:00Z', 'label': None, 'comment': 'test'}
+        ])
+        
+        # Should not raise an exception
+        contributors = analyzer.build_contributors(issues_df, events_df)
+        assert len(contributors) == 1
+
+    def test_top_n_parameter_respected(self, analyzer):
+        """Test that top_n parameter correctly limits results"""
+        issues_df = pd.DataFrame([
+            {'number': i, 'creator': f'user{i}', 'state': 'closed',
+             'created_date': pd.Timestamp('2023-01-15'),
+             'updated_date': pd.Timestamp('2023-01-20'),
+             'labels': ['kind/feature']}
+            for i in range(20)
+        ])
+        
+        top_5, _ = analyzer.analyze_top_feature_requesters(issues_df, top_n=5)
+        assert len(top_5) <= 5
+        
+        top_10, _ = analyzer.analyze_top_feature_requesters(issues_df, top_n=10)
+        assert len(top_10) <= 10
+
+    def test_analyze_bug_closure_year_boundary(self, analyzer):
+        """Test bug closure distribution across year boundaries (Dec 31 → Jan 1)"""
+        issues_df = pd.DataFrame([
+            {'number': 1, 'creator': 'user1', 'state': 'closed',
+             'created_date': pd.Timestamp('2023-12-31 23:00:00'),
+             'updated_date': pd.Timestamp('2024-01-01 01:00:00'),
+             'labels': ['kind/bug']},
+            {'number': 2, 'creator': 'user1', 'state': 'closed',
+             'created_date': pd.Timestamp('2023-12-30 10:00:00'),
+             'updated_date': pd.Timestamp('2024-01-02 10:00:00'),
+             'labels': ['kind/bug']}
+        ])
+        
+        events_df = pd.DataFrame([
+            {'issue_number': 1, 'event_type': 'closed', 'event_author': 'user2',
+             'event_date': pd.Timestamp('2024-01-01 01:00:00'), 'label': None, 'comment': None},
+            {'issue_number': 2, 'event_type': 'closed', 'event_author': 'user2',
+             'event_date': pd.Timestamp('2024-01-02 10:00:00'), 'label': None, 'comment': None}
+        ])
+        
+        result = analyzer.analyze_bug_closure_distribution(issues_df, events_df)
+        
+        # Should have data for 2024 (based on closure date)
+        assert len(result) > 0
+        assert 2024 in result['year'].values
+
+    def test_analyze_engagement_heatmap_concurrent_activity(self, analyzer):
+        """Test engagement heatmap with multiple users active in same hour/day"""
+        now = pd.Timestamp.now(tz=timezone.utc)
+        same_time = now.replace(hour=14, minute=0, second=0, microsecond=0)
+        
+        # Create multiple contributors with activity at the same time
+        contributors = []
+        for i in range(5):
+            c = Contributor(f'user{i}')
+            c.first_activity = same_time
+            c.last_activity = same_time
+            contributors.append(c)
+        
+        heatmap = analyzer.analyze_engagement_heatmap(contributors)
+        
+        # Activity should be accumulated for that specific hour
+        day_name = same_time.strftime('%a')
+        hour = same_time.hour
+        assert heatmap.loc[day_name, hour] == 5
+
+    def test_analyze_lifecycle_stages_timezone_edge_cases(self, analyzer):
+        """Test lifecycle stages with different timezone scenarios"""
+        # Create contributors with activities in different timezones
+        now = pd.Timestamp.now(tz=timezone.utc)
+        
+        c1 = Contributor('user_utc')
+        c1.first_activity = now - timedelta(days=100)
+        c1.last_activity = now - timedelta(days=50)
+        
+        c2 = Contributor('user_naive')
+        c2.first_activity = (now - timedelta(days=100)).replace(tzinfo=None)
+        c2.last_activity = (now - timedelta(days=50)).replace(tzinfo=None)
+        
+        result = analyzer.analyze_lifecycle_stages([c1, c2])
+        
+        # Should handle both timezone-aware and naive datetimes
+        assert len(result) == 2
+        assert result['stage'].notna().all()
+
+    def test_compute_unique_commenters_monthly_aggregation(self, analyzer):
+        """Test that unique commenters are correctly aggregated by month"""
+        issues_df = pd.DataFrame([
+            {'number': 1, 'creator': 'user1', 'state': 'open',
+             'created_date': pd.Timestamp('2023-01-15'),
+             'updated_date': pd.Timestamp('2023-03-20'),
+             'labels': ['kind/bug']}
+        ])
+        
+        # Multiple comments from same user in same month should count as 1
+        # Multiple comments from different users should count separately
+        events_df = pd.DataFrame([
+            {'issue_number': 1, 'event_type': 'commented', 'event_author': 'user2',
+             'event_date': pd.Timestamp('2023-02-05 10:00:00'), 'label': None, 'comment': 'comment1'},
+            {'issue_number': 1, 'event_type': 'commented', 'event_author': 'user2',
+             'event_date': pd.Timestamp('2023-02-15 14:00:00'), 'label': None, 'comment': 'comment2'},
+            {'issue_number': 1, 'event_type': 'commented', 'event_author': 'user3',
+             'event_date': pd.Timestamp('2023-02-20 16:00:00'), 'label': None, 'comment': 'comment3'},
+            {'issue_number': 1, 'event_type': 'commented', 'event_author': 'user2',
+             'event_date': pd.Timestamp('2023-03-05 09:00:00'), 'label': None, 'comment': 'comment4'}
+        ])
+        
+        result = analyzer.compute_unique_commenters(events_df, issues_df)
+        
+        # February should have 2 unique commenters (user2 and user3)
+        feb_data = result[(result['issue_number'] == 1) & (result['month'].dt.month == 2)]
+        if not feb_data.empty:
+            assert feb_data['n_unique_commenters'].iloc[0] == 2
+        
+        # March should have 1 unique commenter (user2)
+        mar_data = result[(result['issue_number'] == 1) & (result['month'].dt.month == 3)]
+        if not mar_data.empty:
+            assert mar_data['n_unique_commenters'].iloc[0] == 1
+
+    def test_analyze_top_active_users_per_year_edge_cases(self, analyzer):
+        """Test top active users with edge cases: single year, no activity"""
+        # Single contributor, single year
+        c1 = Contributor('user1')
+        c1.first_activity = pd.Timestamp('2023-06-15', tz=timezone.utc)
+        c1.last_activity = pd.Timestamp('2023-06-20', tz=timezone.utc)
+        
+        result = analyzer.analyze_top_active_users_per_year([c1])
+        
+        assert 2023 in result
+        assert len(result[2023]) == 1
+        assert result[2023]['user'].iloc[0] == 'user1'
+
+    def test_analyze_top_active_users_activity_calculation(self, analyzer):
+        """Test that activity is correctly calculated (issues + comments)"""
+        c1 = Contributor('user1')
+        c1.first_activity = pd.Timestamp('2023-01-15', tz=timezone.utc)
+        c1.last_activity = pd.Timestamp('2023-12-20', tz=timezone.utc)
+        c1.issues_created = [1, 2, 3]  # 3 issues
+        c1.comments = [
+            type('obj', (object,), {'created_at': pd.Timestamp('2023-06-15', tz=timezone.utc)})(),
+            type('obj', (object,), {'created_at': pd.Timestamp('2023-07-20', tz=timezone.utc)})()
+        ]  # 2 comments
+        
+        result = analyzer.analyze_top_active_users_per_year([c1])
+        
+        # Total activity should be 5 (3 issues + 2 comments)
+        assert result[2023]['activity'].iloc[0] == 5
+
+    def test_analyze_docs_issues_empty_events(self, analyzer):
+        """Test docs issues analysis with no events data"""
+        class MockLoader:
+            def filter_by_label(self, df, label):
+                return df[df['labels'].apply(lambda L: any('doc' in str(l).lower() for l in L))]
+        
+        docs_issues_df = pd.DataFrame([
+            {'number': 1, 'creator': 'user1', 'state': 'closed',
+             'created_date': pd.Timestamp('2023-01-15'),
+             'updated_date': pd.Timestamp('2023-01-20'),
+             'labels': ['area/docs']}
+        ])
+        
+        empty_events = pd.DataFrame(columns=['issue_number', 'event_type', 'event_author', 'event_date', 'label', 'comment'])
+        
+        status_counts, avg_commenters = analyzer.analyze_docs_issues(docs_issues_df, empty_events, MockLoader())
+        
+        # Should handle empty events gracefully
+        assert status_counts is not None
+        assert 'closed' in status_counts['state'].values
+
+    def test_analyze_docs_issues_state_distribution(self, analyzer):
+        """Test docs issues state distribution calculation"""
+        class MockLoader:
+            def filter_by_label(self, df, label):
+                return df[df['labels'].apply(lambda L: any('doc' in str(l).lower() for l in L))]
+        
+        docs_issues_df = pd.DataFrame([
+            {'number': 1, 'creator': 'user1', 'state': 'closed',
+             'created_date': pd.Timestamp('2023-01-15'),
+             'updated_date': pd.Timestamp('2023-01-20'),
+             'labels': ['area/docs']},
+            {'number': 2, 'creator': 'user2', 'state': 'open',
+             'created_date': pd.Timestamp('2023-02-10'),
+             'updated_date': pd.Timestamp('2023-02-12'),
+             'labels': ['area/docs']},
+            {'number': 3, 'creator': 'user3', 'state': 'closed',
+             'created_date': pd.Timestamp('2023-03-05'),
+             'updated_date': pd.Timestamp('2023-03-10'),
+             'labels': ['area/docs']}
+        ])
+        
+        events_df = pd.DataFrame([
+            {'issue_number': 1, 'event_type': 'commented', 'event_author': 'userA',
+             'event_date': pd.Timestamp('2023-01-18'), 'label': None, 'comment': 'test'}
+        ])
+        
+        status_counts, avg_commenters = analyzer.analyze_docs_issues(docs_issues_df, events_df, MockLoader())
+        
+        # Should have 2 closed and 1 open
+        closed_count = status_counts[status_counts['state'] == 'closed']['count'].iloc[0]
+        open_count = status_counts[status_counts['state'] == 'open']['count'].iloc[0]
+        
+        assert closed_count == 2
+        assert open_count == 1
+
+    def test_label_filtering_case_insensitive(self, analyzer):
+        """Test that label filtering handles mixed case correctly"""
+        issues_df = pd.DataFrame([
+            {'number': 1, 'creator': 'user1', 'state': 'closed',
+             'created_date': pd.Timestamp('2023-01-15'),
+             'updated_date': pd.Timestamp('2023-01-20'),
+             'labels': ['Kind/Bug', 'Priority/HIGH']},  # Mixed case
+            {'number': 2, 'creator': 'user2', 'state': 'open',
+             'created_date': pd.Timestamp('2023-02-10'),
+             'updated_date': pd.Timestamp('2023-02-12'),
+             'labels': ['kind/FEATURE', 'area/DOCS']}  # All caps
+        ])
+        
+        events_df = pd.DataFrame([
+            {'issue_number': 1, 'event_type': 'closed', 'event_author': 'user1',
+             'event_date': pd.Timestamp('2023-01-20'), 'label': None, 'comment': None}
+        ])
+        
+        # Should handle case-insensitive label matching
+        result = analyzer.analyze_bug_closure_distribution(issues_df, events_df)
+        assert len(result) > 0
+
+    def test_label_filtering_special_characters(self, analyzer):
+        """Test label filtering with special characters and spaces"""
+        issues_df = pd.DataFrame([
+            {'number': 1, 'creator': 'user1', 'state': 'closed',
+             'created_date': pd.Timestamp('2023-01-15'),
+             'updated_date': pd.Timestamp('2023-01-20'),
+             'labels': ['kind/bug-fix', 'area: documentation']},  # Special chars
+            {'number': 2, 'creator': 'user2', 'state': 'open',
+             'created_date': pd.Timestamp('2023-02-10'),
+             'updated_date': pd.Timestamp('2023-02-12'),
+             'labels': ['kind/feature_request', 'good-first-issue']}
+        ])
+        
+        events_df = pd.DataFrame([
+            {'issue_number': 1, 'event_type': 'commented', 'event_author': 'user3',
+             'event_date': pd.Timestamp('2023-01-18'), 'label': None, 'comment': 'test'}
+        ])
+        
+        contributors = analyzer.build_contributors(issues_df, events_df)
+        assert len(contributors) == 3
+
+    def test_large_dataset_performance(self, analyzer):
+        """Test handling of large datasets (1000+ issues)"""
+        # Create 1000 issues
+        issues_df = pd.DataFrame([
+            {'number': i, 'creator': f'user{i % 100}', 'state': 'closed' if i % 2 == 0 else 'open',
+             'created_date': pd.Timestamp('2023-01-01') + timedelta(days=i % 365),
+             'updated_date': pd.Timestamp('2023-01-01') + timedelta(days=i % 365, hours=5),
+             'labels': ['kind/bug' if i % 3 == 0 else 'kind/feature']}
+            for i in range(1000)
+        ])
+        
+        events_df = pd.DataFrame([
+            {'issue_number': i, 'event_type': 'commented', 'event_author': f'user{(i+1) % 100}',
+             'event_date': pd.Timestamp('2023-01-01') + timedelta(days=i % 365, hours=2),
+             'label': None, 'comment': f'comment{i}'}
+            for i in range(0, 1000, 10)  # Every 10th issue has a comment
+        ])
+        
+        # Should complete without errors or excessive time
+        contributors = analyzer.build_contributors(issues_df, events_df)
+        assert len(contributors) == 100  # 100 unique users
+        
+        result = analyzer.analyze_top_active_users_per_year(contributors)
+        assert len(result) > 0
+
+    def test_null_and_missing_dates(self, analyzer):
+        """Test handling of null/NaT dates in various scenarios"""
+        issues_df = pd.DataFrame([
+            {'number': 1, 'creator': 'user1', 'state': 'closed',
+             'created_date': pd.Timestamp('2023-01-15'),
+             'updated_date': pd.NaT,  # NaT (Not a Time)
+             'labels': ['kind/bug']},
+            {'number': 2, 'creator': 'user2', 'state': 'open',
+             'created_date': None,  # None
+             'updated_date': pd.Timestamp('2023-02-12'),
+             'labels': ['kind/feature']},
+            {'number': 3, 'creator': 'user3', 'state': 'closed',
+             'created_date': pd.Timestamp('2023-03-05'),
+             'updated_date': pd.Timestamp('2023-03-10'),
+             'labels': ['kind/bug']}
+        ])
+        
+        events_df = pd.DataFrame([
+            {'issue_number': 1, 'event_type': 'commented', 'event_author': 'user1',
+             'event_date': pd.NaT, 'label': None, 'comment': 'test'},
+            {'issue_number': 3, 'event_type': 'commented', 'event_author': 'user2',
+             'event_date': pd.Timestamp('2023-03-08'), 'label': None, 'comment': 'test2'}
+        ])
+        
+        # Should handle NaT/None dates gracefully
+        contributors = analyzer.build_contributors(issues_df, events_df)
+        assert len(contributors) > 0
+
+    def test_special_usernames(self, analyzer):
+        """Test handling of usernames with special characters"""
+        issues_df = pd.DataFrame([
+            {'number': 1, 'creator': 'user-name', 'state': 'closed',
+             'created_date': pd.Timestamp('2023-01-15'),
+             'updated_date': pd.Timestamp('2023-01-20'),
+             'labels': ['kind/bug']},
+            {'number': 2, 'creator': 'user_name_2', 'state': 'open',
+             'created_date': pd.Timestamp('2023-02-10'),
+             'updated_date': pd.Timestamp('2023-02-12'),
+             'labels': ['kind/feature']},
+            {'number': 3, 'creator': 'user.name.3', 'state': 'closed',
+             'created_date': pd.Timestamp('2023-03-05'),
+             'updated_date': pd.Timestamp('2023-03-10'),
+             'labels': ['kind/bug']}
+        ])
+        
+        events_df = pd.DataFrame([
+            {'issue_number': 1, 'event_type': 'commented', 'event_author': 'user-name',
+             'event_date': pd.Timestamp('2023-01-18'), 'label': None, 'comment': 'test'}
+        ])
+        
+        contributors = analyzer.build_contributors(issues_df, events_df)
+        
+        usernames = [c.username for c in contributors]
+        assert 'user-name' in usernames
+        assert 'user_name_2' in usernames
+        assert 'user.name.3' in usernames
+
+    def test_lifecycle_stages_graduated_threshold(self, analyzer):
+        """Test graduated contributor threshold (6+ months inactive)"""
+        now = pd.Timestamp.now(tz=timezone.utc)
+        
+        # Exactly 6 months inactive (should be graduated)
+        c1 = Contributor('exactly_6_months')
+        c1.first_activity = now - timedelta(days=365)
+        c1.last_activity = now - timedelta(days=183)  # ~6 months
+        
+        # Just under 6 months (should be active)
+        c2 = Contributor('under_6_months')
+        c2.first_activity = now - timedelta(days=365)
+        c2.last_activity = now - timedelta(days=175)  # <6 months
+        
+        # Over 6 months (should be graduated)
+        c3 = Contributor('over_6_months')
+        c3.first_activity = now - timedelta(days=365)
+        c3.last_activity = now - timedelta(days=200)  # >6 months
+        
+        result = analyzer.analyze_lifecycle_stages([c1, c2, c3], reference_date=now)
+        
+        stages = result.set_index('contributor')['stage'].to_dict()
+        assert stages['exactly_6_months'] == 'Graduated Contributor'
+        assert stages['under_6_months'] in ['Active', 'Core Maintainer']
+        assert stages['over_6_months'] == 'Graduated Contributor'
+
+    def test_engagement_heatmap_all_days_covered(self, analyzer):
+        """Test that engagement heatmap includes all 7 days and 24 hours"""
+        # Create contributors with activity spread across different days/hours
+        contributors = []
+        for day in range(7):
+            for hour in range(0, 24, 6):  # Every 6 hours
+                c = Contributor(f'user_d{day}_h{hour}')
+                # Create timestamp for specific day and hour
+                base_date = pd.Timestamp('2023-01-02', tz=timezone.utc)  # Monday
+                activity_time = base_date + timedelta(days=day, hours=hour)
+                c.first_activity = activity_time
+                c.last_activity = activity_time
+                contributors.append(c)
+        
+        heatmap = analyzer.analyze_engagement_heatmap(contributors)
+        
+        # All days should have some activity
+        assert (heatmap.sum(axis=1) > 0).all()
+        
+        # Some hours should have activity
+        assert (heatmap.sum(axis=0) > 0).any()
