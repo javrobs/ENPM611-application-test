@@ -1,0 +1,22 @@
+Name                                           Stmts   Miss  Cover
+------------------------------------------------------------------
+analysis\__init__.py                               3      0   100%
+analysis\contributors_analyzer.py                143     13    91%
+analysis\label_resolution_analyzer.py            120     28    77%
+analysis\priority_analyzer.py                    181     40    78%
+analysis\priority_visualizer.py                  145      0   100%
+app\__init__.py                                    2      0   100%
+app\feature_runner.py                             86      1    99%
+config.py                                         82     16    80%
+controllers\__init__.py                            3      0   100%
+controllers\contributors_controller.py            62      3    95%
+controllers\label_resolution_controller.py       107      1    99%
+controllers\priority_controller.py               118      5    96%
+data_loader.py                                    33      3    91%
+model.py                                         293     39    87%
+utils\datetime_helper.py                           6      0   100%
+visualization\__init__.py                          2      0   100%
+visualization\label_resolution_visualizer.py     160      5    97%
+visualization\visualizer.py                      115      0   100%
+------------------------------------------------------------------
+TOTAL                                           1661    154    91%

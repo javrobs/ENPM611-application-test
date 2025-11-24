@@ -1,0 +1,34 @@
+======================================================================
+FAIL: test_extract_features_activity_metrics (test_feature_3_white_box.TestPriorityAnalyzer.test_extract_features_activity_metrics)
+Test feature extraction for activity metrics.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\j_vy3\Desktop\master\Fall 2025\Software Engineering - Core\ENPM611-application-test\tests\test_feature_3_white_box.py", line 194, in test_extract_features_activity_metrics
+    self.assertEqual(features['num_participants'], 2)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 2
+
+======================================================================
+FAIL: test_first_response_time (test_feature_3_white_box.TestPriorityAnalyzer.test_first_response_time)
+Test first response time calculation.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\j_vy3\Desktop\master\Fall 2025\Software Engineering - Core\ENPM611-application-test\tests\test_feature_3_white_box.py", line 259, in test_first_response_time
+    self.assertEqual(response_time, 0.5) #30 minutes for first comment
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+AssertionError: None != 0.5
+
+======================================================================
+FAIL: test_get_resolution_time_open_issue (test_feature_3_white_box.TestPriorityAnalyzer.test_get_resolution_time_open_issue)
+Test resolution time returns None for open issue.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\j_vy3\Desktop\master\Fall 2025\Software Engineering - Core\ENPM611-application-test\tests\test_feature_3_white_box.py", line 126, in test_get_resolution_time_open_issue
+    self.assertIsNone(resolution_time)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+AssertionError: 0.5 is not None
+
+----------------------------------------------------------------------
+Ran 114 tests in 48.273s
+
+FAILED (failures=3)

@@ -743,21 +743,5 @@ class TestDateTimeHelper(unittest.TestCase):
         for dt, expected in test_cases:
             self.assertEqual(extract_day_hour(dt), expected)
 
-def suite():
-    """Create a test suite containing all test cases"""
-    test_suite = unittest.TestSuite()
-
-    # Add all test classes
-    test_suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestFeatureRunner))
-    test_suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestDataLoader))
-    test_suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestLabelResolutionController))
-    test_suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestLabelResolutionVisualizer))
-    test_suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestFeatureRunnerIntegration))
-    test_suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestDateTimeHelper))
-    return test_suite
-
-
-if __name__ == '__main__':
-    # Run all tests with verbose output
-    runner = unittest.TextTestRunner(verbosity=2)
-    runner.run(suite())
+if __name__ == "__main__":
+    unittest.main()

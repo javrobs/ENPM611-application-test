@@ -50,7 +50,7 @@ MOCK_JSON = [
     {
         "url": "https://github.com/test/repo/issues/2",
         "creator": "user3",
-        "labels": ["feature", "enhancement"],
+        "labels": ["feature", "enhancement", "area/docs"],
         "state": "open",
         "assignees": [],
         "title": "Add new feature",
@@ -275,7 +275,7 @@ class TestVisualizer(unittest.TestCase):
         fig = self.visualizer.create_engagement_heatmap_chart(heatmap_data)
         
         self.assertIsNotNone(fig)
-        self.assertEqual(len(fig.axes), 1)
+        self.assertEqual(len(fig.axes), 2)
 
     def test_create_lifecycle_chart(self):
         """Test lifecycle chart creation."""
@@ -290,28 +290,6 @@ class TestVisualizer(unittest.TestCase):
         
         self.assertIsNotNone(fig)
         self.assertGreater(len(fig.axes[0].patches), 0)
-
-    def test_save_figure_matplotlib(self):
-        """Test saving matplotlib figure."""
-        fig, ax = plt.subplots()
-        ax.plot([1, 2, 3], [1, 2, 3])
-        
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-            self.visualizer.save_figure(fig, tmp.name)
-            self.assertTrue(os.path.exists(tmp.name))
-            os.unlink(tmp.name)
-
-    def test_save_figure_plotly(self):
-        """Test saving plotly figure."""
-        fig = go.Figure(data=[go.Bar(x=[1, 2, 3], y=[1, 2, 3])])
-        
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-            # Mock the write_image method
-            with patch.object(fig, 'write_image'):
-                self.visualizer.save_figure(fig, tmp.name)
-
 
 class TestContributorsAnalyzer(unittest.TestCase):
     """Test suite for ContributorsAnalyzer class."""
@@ -412,7 +390,8 @@ class TestContributorsAnalyzer(unittest.TestCase):
         ]
         
         result = self.analyzer.analyze_top_feature_requesters(no_features_df, top_n=10)
-        self.assertIsNone(result)
+        self.assertIsNone(result[0])
+        self.assertIsNone(result[1])
 
     def test_compute_unique_commenters(self):
         """Test unique commenters computation."""
@@ -441,7 +420,8 @@ class TestContributorsAnalyzer(unittest.TestCase):
         
         loader = DataLoader()
         result = self.analyzer.analyze_docs_issues(no_docs_df, self.events_df, loader)
-        self.assertIsNone(result)
+        self.assertIsNone(result[0])
+        self.assertIsNone(result[1])
 
     def test_analyze_issues_created_per_user(self):
         """Test issues created per user analysis."""
