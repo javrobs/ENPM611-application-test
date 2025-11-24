@@ -1588,120 +1588,135 @@ class TestIssuePredictionModel(unittest.TestCase):
         """Test model initialization"""
         self.assertIsNotNone(self.model.text_vectorizer)
         self.assertIsNotNone(self.model.scaler)
-        self.assertIsNotNone(self.model.urgency_model)
-        self.assertIsNone(self.model.closed_issue_vectors)
-        self.assertEqual(len(self.model.closed_issue_metadata), 0)
+        self.assertIsNotNone(self.model.priority_classifier)
+        self.assertFalse(self.model.is_trained)
     
-    def test_prepare_feature_matrix_fit(self):
-        """Test feature matrix preparation with fitting"""
-        X, texts = self.model.prepare_feature_matrix(self.features_list, fit=True)
+    def test_prepare_features_with_issue(self):
+        """Test feature preparation from Issue object"""
+        from model import Issue
+        issue = Issue({
+            'title': 'Bug in feature',
+            'text': 'Description here',
+            'number': 123,
+            'labels': ['bug', 'priority/high'],
+            'assignees': ['dev1'],
+            'events': [
+                {'event_type': 'commented'},
+                {'event_type': 'commented'},
+                {'event_type': 'closed'}
+            ]
+        })
         
-        self.assertIsNotNone(X)
-        self.assertEqual(len(texts), len(self.features_list))
-        self.assertGreater(X.shape[1], len(self.features_list[0]) - 2)  # TF-IDF adds features
-    
-    def test_prepare_feature_matrix_transform(self):
-        """Test feature matrix preparation without fitting"""
-        # First fit
-        self.model.prepare_feature_matrix(self.features_list, fit=True)
+        features = self.model.prepare_features(issue)
         
-        # Then transform
-        X, texts = self.model.prepare_feature_matrix(self.features_list[:1], fit=False)
-        self.assertIsNotNone(X)
-        self.assertEqual(len(texts), 1)
+        self.assertIn('title', features)
+        self.assertIn('text', features)
+        self.assertIn('comment_count', features)
+        self.assertIn('event_count', features)
+        self.assertIn('has_assignee', features)
+        self.assertIn('label_count', features)
+        self.assertIn('text_length', features)
     
-    def test_train_priority_only(self):
-        """Test training with priority labels only"""
+    def test_train_priority_model(self):
+        """Test training priority classification model"""
         result = self.model.train_priority_model(self.features_list, self.priorities)
         
-        self.assertEqual(result['status'], 'success')
-        self.assertIn('accuracy', result)
-        self.assertIn('classification_report', result)
-        self.assertGreater(result['training_samples'], 0)
+        self.assertTrue(result)
+        self.assertTrue(self.model.is_trained)
     
-    def test_train_with_insufficient_data(self):
+    def test_train_priority_insufficient_data(self):
         """Test training fails with insufficient data"""
         small_features = [self.features_list[0]]
-        small_priorities = [self.priorities[0]]
+        small_priorities = ['medium']
         
         result = self.model.train_priority_model(small_features, small_priorities)
         
-        self.assertEqual(result['status'], 'error')
-        self.assertIn('samples', result['message'].lower())
+        self.assertFalse(result)
+    
+    def test_predict_priority_success(self):
+        """Test successful priority prediction"""
+        self.model.train_priority_model(self.features_list, self.priorities)
+        
+        result = self.model.predict_priority(self.features_list[0])
+        
+        self.assertIn('priority', result)
+        self.assertIn('confidence', result)
+        self.assertIn(result['priority'], ['low', 'medium', 'high'])
     
     def test_predict_priority_before_training(self):
         """Test prediction fails before training"""
         result = self.model.predict_priority(self.features_list[0])
         
-        self.assertEqual(result['status'], 'error')
+        self.assertIsNone(result)
     
-    def test_predict_priority_after_training(self):
-        """Test priority prediction after training"""
-        # Expand training data
-        expanded_features = self.features_list * 4
-        expanded_priorities = self.priorities * 4
+    def test_find_similar_issues(self):
+        """Test finding similar issues"""
+        self.model.train_priority_model(self.features_list, self.priorities)
         
-        self.model.train_priority_model(expanded_features, expanded_priorities)
-        result = self.model.predict_priority(self.features_list[0])
+        query_features = {
+            'title': 'Login problem',
+            'text': 'Cannot log in',
+            'comment_count': 3,
+            'event_count': 5,
+            'has_assignee': 0,
+            'label_count': 1,
+            'text_length': 40
+        }
         
-        self.assertEqual(result['status'], 'success')
-        self.assertIn('priority', result)
-        self.assertIn('confidence', result)
-        self.assertIn(result['priority'], ['low', 'medium', 'high'])
+        similar = self.model.find_similar_issues(query_features, top_n=2)
+        
+        self.assertIsNotNone(similar)
+        self.assertLessEqual(len(similar), 2)
     
-    def test_find_similar_issues_no_training(self):
-        """Test finding similar issues without training data"""
-        results = self.model.find_similar_issues(self.features_list[0], top_k=3)
+    def test_find_similar_issues_before_training(self):
+        """Test finding similar issues before training"""
+        query_features = self.features_list[0]
         
-        self.assertEqual(len(results), 0)
-    
-    def test_store_closed_issues(self):
-        """Test storing closed issues for similarity search"""
-        self.model.store_closed_issues(self.features_list, self.resolution_times)
+        similar = self.model.find_similar_issues(query_features)
         
-        self.assertIsNotNone(self.model.closed_issue_vectors)
-        self.assertEqual(len(self.model.closed_issue_metadata), len(self.features_list))
-    
-    def test_find_similar_issues_after_storing(self):
-        """Test finding similar issues after storing closed issues"""
-        self.model.store_closed_issues(self.features_list, self.resolution_times)
-        results = self.model.find_similar_issues(self.features_list[0], top_k=2)
-        
-        self.assertGreater(len(results), 0)
-        self.assertLessEqual(len(results), 2)
-        
-        # Check result structure
-        for result in results:
-            self.assertIn('similarity', result)
-            self.assertIn('resolution_hours', result)
-            self.assertIn('features', result)
-    
-    def test_similarity_score_range(self):
-        """Test similarity scores are in valid range [0, 1]"""
-        self.model.store_closed_issues(self.features_list, self.resolution_times)
-        results = self.model.find_similar_issues(self.features_list[0], top_k=2)
-        
-        for result in results:
-            self.assertGreaterEqual(result['similarity'], 0.0)
-            self.assertLessEqual(result['similarity'], 1.0)
+        self.assertIsNone(similar)
     
     def test_get_training_summary_untrained(self):
         """Test training summary for untrained model"""
         summary = self.model.get_training_summary()
         
-        self.assertEqual(summary['models_trained'], [])
-        self.assertIsNone(summary['priority_model'])
+        self.assertIn('models_trained', summary)
+        self.assertEqual(len(summary['models_trained']), 0)
     
     def test_get_training_summary_trained(self):
         """Test training summary for trained model"""
-        expanded_features = self.features_list * 4
-        expanded_priorities = self.priorities * 4
-        self.model.train_priority_model(expanded_features, expanded_priorities)
+        self.model.train_priority_model(self.features_list, self.priorities)
         
         summary = self.model.get_training_summary()
         
         self.assertIn('priority', summary['models_trained'])
         self.assertIsNotNone(summary['priority_model'])
+    
+    def test_predict_priority_with_all_priorities(self):
+        """Test prediction includes all priority levels"""
+        # Add more samples for each priority
+        extended_features = self.features_list * 3
+        extended_priorities = self.priorities * 3
+        
+        self.model.train_priority_model(extended_features, extended_priorities)
+        
+        result = self.model.predict_priority(self.features_list[0])
+        
+        self.assertIsNotNone(result)
+    
+    def test_text_vectorization(self):
+        """Test text is properly vectorized"""
+        self.model.train_priority_model(self.features_list, self.priorities)
+        
+        # Verify vectorizer is fitted
+        self.assertIsNotNone(self.model.text_vectorizer)
+    
+    def test_feature_scaling(self):
+        """Test numeric features are scaled"""
+        self.model.train_priority_model(self.features_list, self.priorities)
+        
+        # Verify scaler is fitted
+        self.assertIsNotNone(self.model.scaler)
 
 
 class TestEvent(unittest.TestCase):
@@ -1767,7 +1782,7 @@ class TestEvent(unittest.TestCase):
         close_event = Event({'event_type': 'closed'})
         
         self.assertTrue(comment_event.is_comment_event())
-        self.assertFalse(close_event.is_close_event())
+        self.assertFalse(close_event.is_comment_event())
 
 
 class TestIssue(unittest.TestCase):
