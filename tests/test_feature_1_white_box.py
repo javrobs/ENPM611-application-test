@@ -193,6 +193,11 @@ class TestFeatureRunner(unittest.TestCase):
 class TestDataLoader(unittest.TestCase):
     """Test DataLoader methods used in Feature 1"""
 
+    def tearDown(self):
+        """Clean up after tests."""
+        import data_loader
+        data_loader._ISSUES = None #Test interference
+
     @patch('data_loader.open', new_callable=mock_open, read_data='[{"number": 1}]')
     @patch('data_loader.config.get_parameter')
     def test_load_json(self, mock_config, mock_file):
