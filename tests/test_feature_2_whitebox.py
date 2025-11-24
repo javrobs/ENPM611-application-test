@@ -1331,5 +1331,744 @@ class TestVisualizer(unittest.TestCase):
         self.assertIsNotNone(fig)
 
 
+# ============================================================================
+# Model Tests (New Additions)
+# ============================================================================
+
+class TestLabelResolutionPredictor(unittest.TestCase):
+    """Test suite for LabelResolutionPredictor class - 90%+ coverage"""
+    
+    def setUp(self):
+        """Set up test fixtures"""
+        from model import LabelResolutionPredictor
+        self.predictor = LabelResolutionPredictor()
+        
+        # Sample training data
+        self.features = [
+            [5, 3, 10, 2],  # [num_comments, num_events, text_length, assignee_count]
+            [2, 1, 5, 1],
+            [10, 8, 50, 3],
+            [7, 4, 20, 2],
+            [3, 2, 8, 1],
+            [15, 12, 80, 4],
+            [6, 3, 15, 2],
+            [4, 2, 12, 1],
+            [8, 5, 25, 2],
+            [12, 9, 60, 3]
+        ]
+        self.labels = [24, 12, 120, 48, 18, 168, 36, 20, 60, 96]  # hours
+        self.feature_names = ['num_comments', 'num_events', 'text_length', 'assignee_count']
+    
+    def test_initialization(self):
+        """Test model initialization"""
+        self.assertIsNotNone(self.predictor.rf_model)
+        self.assertIsNotNone(self.predictor.gb_model)
+        self.assertIsNotNone(self.predictor.scaler)
+        self.assertFalse(self.predictor.is_trained)
+        self.assertEqual(len(self.predictor.feature_names), 0)
+    
+    def test_train_with_sufficient_data(self):
+        """Test training with sufficient data"""
+        result = self.predictor.train(self.features, self.labels, self.feature_names)
+        
+        self.assertEqual(result['status'], 'success')
+        self.assertTrue(self.predictor.is_trained)
+        self.assertIn('training_samples', result)
+        self.assertIn('test_samples', result)
+        self.assertIn('random_forest', result)
+        self.assertIn('gradient_boosting', result)
+        self.assertIn('ensemble', result)
+        self.assertIn('feature_importance', result)
+    
+    def test_train_with_insufficient_data(self):
+        """Test training fails with insufficient data"""
+        small_features = [[1, 2, 3, 4], [5, 6, 7, 8]]
+        small_labels = [10, 20]
+        
+        result = self.predictor.train(small_features, small_labels, self.feature_names)
+        
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('Insufficient training data', result['message'])
+        self.assertFalse(self.predictor.is_trained)
+    
+    def test_training_metrics_structure(self):
+        """Test training metrics contain all required fields"""
+        result = self.predictor.train(self.features, self.labels, self.feature_names)
+        
+        # Check Random Forest metrics
+        rf_metrics = result['random_forest']
+        self.assertIn('mae_hours', rf_metrics)
+        self.assertIn('mae_days', rf_metrics)
+        self.assertIn('rmse_hours', rf_metrics)
+        self.assertIn('r2_score', rf_metrics)
+        
+        # Check Gradient Boosting metrics
+        gb_metrics = result['gradient_boosting']
+        self.assertIn('mae_hours', gb_metrics)
+        self.assertIn('mae_days', gb_metrics)
+        self.assertIn('rmse_hours', gb_metrics)
+        self.assertIn('r2_score', gb_metrics)
+        
+        # Check Ensemble metrics
+        ensemble_metrics = result['ensemble']
+        self.assertIn('mae_hours', ensemble_metrics)
+        self.assertIn('mae_days', ensemble_metrics)
+        self.assertIn('rmse_hours', ensemble_metrics)
+        self.assertIn('r2_score', ensemble_metrics)
+    
+    def test_predict_before_training(self):
+        """Test prediction fails before training"""
+        result = self.predictor.predict([5, 3, 10, 2])
+        
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('not trained', result['message'])
+    
+    def test_predict_after_training(self):
+        """Test prediction succeeds after training"""
+        self.predictor.train(self.features, self.labels, self.feature_names)
+        result = self.predictor.predict([5, 3, 10, 2])
+        
+        self.assertEqual(result['status'], 'success')
+        self.assertIn('predicted_hours', result)
+        self.assertIn('predicted_days', result)
+        self.assertIn('confidence_interval', result)
+        self.assertIn('model_predictions', result)
+        
+        # Check confidence interval structure
+        ci = result['confidence_interval']
+        self.assertIn('lower_days', ci)
+        self.assertIn('upper_days', ci)
+        self.assertGreaterEqual(ci['upper_days'], ci['lower_days'])
+    
+    def test_predict_batch(self):
+        """Test batch prediction"""
+        self.predictor.train(self.features, self.labels, self.feature_names)
+        test_features = [[5, 3, 10, 2], [10, 8, 50, 3], [3, 2, 8, 1]]
+        
+        results = self.predictor.predict_batch(test_features)
+        
+        self.assertEqual(len(results), 3)
+        for result in results:
+            self.assertEqual(result['status'], 'success')
+            self.assertIn('predicted_hours', result)
+    
+    def test_feature_importance(self):
+        """Test feature importance calculation"""
+        self.predictor.train(self.features, self.labels, self.feature_names)
+        importance = self.predictor.training_metrics['feature_importance']
+        
+        self.assertEqual(len(importance), len(self.feature_names))
+        # Check that importance values sum to approximately 1
+        total_importance = sum(importance.values())
+        self.assertAlmostEqual(total_importance, 1.0, places=1)
+    
+    def test_get_model_info_untrained(self):
+        """Test model info for untrained model"""
+        info = self.predictor.get_model_info()
+        
+        self.assertFalse(info['is_trained'])
+        self.assertEqual(len(info['features']), 0)
+        self.assertIsNone(info['training_metrics'])
+        self.assertIn('Ensemble', info['model_type'])
+    
+    def test_get_model_info_trained(self):
+        """Test model info for trained model"""
+        self.predictor.train(self.features, self.labels, self.feature_names)
+        info = self.predictor.get_model_info()
+        
+        self.assertTrue(info['is_trained'])
+        self.assertEqual(info['features'], self.feature_names)
+        self.assertIsNotNone(info['training_metrics'])
+    
+    @patch('joblib.dump')
+    def test_save_model_success(self, mock_dump):
+        """Test saving trained model"""
+        self.predictor.train(self.features, self.labels, self.feature_names)
+        result = self.predictor.save_model('model.pkl')
+        
+        self.assertTrue(result)
+        mock_dump.assert_called_once()
+    
+    def test_save_model_untrained(self):
+        """Test saving untrained model fails"""
+        result = self.predictor.save_model('model.pkl')
+        self.assertFalse(result)
+    
+    @patch('joblib.load')
+    def test_load_model_success(self, mock_load):
+        """Test loading model successfully"""
+        mock_load.return_value = {
+            'rf_model': MagicMock(),
+            'gb_model': MagicMock(),
+            'scaler': MagicMock(),
+            'feature_names': self.feature_names,
+            'training_metrics': {'status': 'success'}
+        }
+        
+        result = self.predictor.load_model('model.pkl')
+        
+        self.assertTrue(result)
+        self.assertTrue(self.predictor.is_trained)
+        mock_load.assert_called_once_with('model.pkl')
+    
+    @patch('joblib.load')
+    def test_load_model_failure(self, mock_load):
+        """Test loading model handles errors"""
+        mock_load.side_effect = Exception("File not found")
+        
+        result = self.predictor.load_model('model.pkl')
+        
+        self.assertFalse(result)
+        self.assertFalse(self.predictor.is_trained)
+    
+    def test_mae_days_conversion(self):
+        """Test MAE is correctly converted to days"""
+        self.predictor.train(self.features, self.labels, self.feature_names)
+        metrics = self.predictor.training_metrics['ensemble']
+        
+        # Check conversion: mae_days = mae_hours / 24
+        expected_mae_days = metrics['mae_hours'] / 24
+        self.assertAlmostEqual(metrics['mae_days'], expected_mae_days, places=2)
+    
+    def test_ensemble_prediction_averaging(self):
+        """Test ensemble uses average of RF and GB predictions"""
+        self.predictor.train(self.features, self.labels, self.feature_names)
+        result = self.predictor.predict([5, 3, 10, 2])
+        
+        rf_pred = result['model_predictions']['random_forest_days']
+        gb_pred = result['model_predictions']['gradient_boosting_days']
+        ensemble_pred = result['predicted_days']
+        
+        expected_avg = (rf_pred + gb_pred) / 2
+        self.assertAlmostEqual(ensemble_pred, expected_avg, places=2)
+
+
+class TestIssuePredictionModel(unittest.TestCase):
+    """Test suite for IssuePredictionModel class - 90%+ coverage"""
+    
+    def setUp(self):
+        """Set up test fixtures"""
+        from model import IssuePredictionModel
+        self.model = IssuePredictionModel()
+        
+        # Sample training data
+        self.features_list = [
+            {
+                'title': 'Bug in login feature',
+                'text': 'Users cannot log in when using special characters',
+                'comment_count': 5,
+                'event_count': 10,
+                'has_assignee': 1,
+                'label_count': 2,
+                'text_length': 100
+            },
+            {
+                'title': 'Feature request: Dark mode',
+                'text': 'Please add dark mode support',
+                'comment_count': 3,
+                'event_count': 5,
+                'has_assignee': 0,
+                'label_count': 1,
+                'text_length': 50
+            },
+            {
+                'title': 'Critical security issue',
+                'text': 'SQL injection vulnerability found in user input',
+                'comment_count': 15,
+                'event_count': 20,
+                'has_assignee': 1,
+                'label_count': 3,
+                'text_length': 200
+            }
+        ]
+        self.priorities = ['medium', 'low', 'high']
+        self.resolution_times = [48, 120, 12]  # hours
+    
+    def test_initialization(self):
+        """Test model initialization"""
+        self.assertIsNotNone(self.model.text_vectorizer)
+        self.assertIsNotNone(self.model.scaler)
+        self.assertIsNotNone(self.model.urgency_model)
+        self.assertIsNone(self.model.closed_issue_vectors)
+        self.assertEqual(len(self.model.closed_issue_metadata), 0)
+    
+    def test_prepare_feature_matrix_fit(self):
+        """Test feature matrix preparation with fitting"""
+        X, texts = self.model.prepare_feature_matrix(self.features_list, fit=True)
+        
+        self.assertIsNotNone(X)
+        self.assertEqual(len(texts), len(self.features_list))
+        self.assertGreater(X.shape[1], len(self.features_list[0]) - 2)  # TF-IDF adds features
+    
+    def test_prepare_feature_matrix_transform(self):
+        """Test feature matrix preparation without fitting"""
+        # First fit
+        self.model.prepare_feature_matrix(self.features_list, fit=True)
+        
+        # Then transform
+        X, texts = self.model.prepare_feature_matrix(self.features_list[:1], fit=False)
+        self.assertIsNotNone(X)
+        self.assertEqual(len(texts), 1)
+    
+    def test_train_priority_only(self):
+        """Test training with priority labels only"""
+        result = self.model.train_priority_model(self.features_list, self.priorities)
+        
+        self.assertEqual(result['status'], 'success')
+        self.assertIn('accuracy', result)
+        self.assertIn('classification_report', result)
+        self.assertGreater(result['training_samples'], 0)
+    
+    def test_train_with_insufficient_data(self):
+        """Test training fails with insufficient data"""
+        small_features = [self.features_list[0]]
+        small_priorities = [self.priorities[0]]
+        
+        result = self.model.train_priority_model(small_features, small_priorities)
+        
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('samples', result['message'].lower())
+    
+    def test_predict_priority_before_training(self):
+        """Test prediction fails before training"""
+        result = self.model.predict_priority(self.features_list[0])
+        
+        self.assertEqual(result['status'], 'error')
+    
+    def test_predict_priority_after_training(self):
+        """Test priority prediction after training"""
+        # Expand training data
+        expanded_features = self.features_list * 4
+        expanded_priorities = self.priorities * 4
+        
+        self.model.train_priority_model(expanded_features, expanded_priorities)
+        result = self.model.predict_priority(self.features_list[0])
+        
+        self.assertEqual(result['status'], 'success')
+        self.assertIn('priority', result)
+        self.assertIn('confidence', result)
+        self.assertIn(result['priority'], ['low', 'medium', 'high'])
+    
+    def test_find_similar_issues_no_training(self):
+        """Test finding similar issues without training data"""
+        results = self.model.find_similar_issues(self.features_list[0], top_k=3)
+        
+        self.assertEqual(len(results), 0)
+    
+    def test_store_closed_issues(self):
+        """Test storing closed issues for similarity search"""
+        self.model.store_closed_issues(self.features_list, self.resolution_times)
+        
+        self.assertIsNotNone(self.model.closed_issue_vectors)
+        self.assertEqual(len(self.model.closed_issue_metadata), len(self.features_list))
+    
+    def test_find_similar_issues_after_storing(self):
+        """Test finding similar issues after storing closed issues"""
+        self.model.store_closed_issues(self.features_list, self.resolution_times)
+        results = self.model.find_similar_issues(self.features_list[0], top_k=2)
+        
+        self.assertGreater(len(results), 0)
+        self.assertLessEqual(len(results), 2)
+        
+        # Check result structure
+        for result in results:
+            self.assertIn('similarity', result)
+            self.assertIn('resolution_hours', result)
+            self.assertIn('features', result)
+    
+    def test_similarity_score_range(self):
+        """Test similarity scores are in valid range [0, 1]"""
+        self.model.store_closed_issues(self.features_list, self.resolution_times)
+        results = self.model.find_similar_issues(self.features_list[0], top_k=2)
+        
+        for result in results:
+            self.assertGreaterEqual(result['similarity'], 0.0)
+            self.assertLessEqual(result['similarity'], 1.0)
+    
+    def test_get_training_summary_untrained(self):
+        """Test training summary for untrained model"""
+        summary = self.model.get_training_summary()
+        
+        self.assertEqual(summary['models_trained'], [])
+        self.assertIsNone(summary['priority_model'])
+    
+    def test_get_training_summary_trained(self):
+        """Test training summary for trained model"""
+        expanded_features = self.features_list * 4
+        expanded_priorities = self.priorities * 4
+        self.model.train_priority_model(expanded_features, expanded_priorities)
+        
+        summary = self.model.get_training_summary()
+        
+        self.assertIn('priority', summary['models_trained'])
+        self.assertIsNotNone(summary['priority_model'])
+
+
+class TestEvent(unittest.TestCase):
+    """Test suite for Event class - 90%+ coverage"""
+    
+    def test_initialization_with_none(self):
+        """Test Event initialization with None"""
+        from model import Event
+        event = Event(None)
+        
+        self.assertIsNone(event.event_type)
+        self.assertIsNone(event.author)
+        self.assertIsNone(event.event_date)
+        self.assertIsNone(event.label)
+        self.assertIsNone(event.comment)
+    
+    def test_initialization_with_json(self):
+        """Test Event initialization with JSON object"""
+        from model import Event
+        jobj = {
+            'event_type': 'commented',
+            'author': 'user1',
+            'event_date': '2024-01-15T10:30:00Z',
+            'label': 'bug',
+            'comment': 'This is a comment'
+        }
+        event = Event(jobj)
+        
+        self.assertEqual(event.event_type, 'commented')
+        self.assertEqual(event.author, 'user1')
+        self.assertIsNotNone(event.event_date)
+        self.assertEqual(event.label, 'bug')
+        self.assertEqual(event.comment, 'This is a comment')
+    
+    def test_from_json_with_invalid_date(self):
+        """Test Event handles invalid date gracefully"""
+        from model import Event
+        jobj = {
+            'event_type': 'closed',
+            'author': 'user2',
+            'event_date': 'invalid-date',
+            'label': None,
+            'comment': None
+        }
+        event = Event(jobj)
+        
+        self.assertEqual(event.event_type, 'closed')
+        self.assertIsNone(event.event_date)
+    
+    def test_is_close_event(self):
+        """Test is_close_event method"""
+        from model import Event
+        close_event = Event({'event_type': 'closed'})
+        comment_event = Event({'event_type': 'commented'})
+        
+        self.assertTrue(close_event.is_close_event())
+        self.assertFalse(comment_event.is_close_event())
+    
+    def test_is_comment_event(self):
+        """Test is_comment_event method"""
+        from model import Event
+        comment_event = Event({'event_type': 'commented'})
+        close_event = Event({'event_type': 'closed'})
+        
+        self.assertTrue(comment_event.is_comment_event())
+        self.assertFalse(close_event.is_close_event())
+
+
+class TestIssue(unittest.TestCase):
+    """Test suite for Issue class - 90%+ coverage"""
+    
+    def test_initialization_empty(self):
+        """Test Issue initialization without data"""
+        from model import Issue
+        issue = Issue()
+        
+        self.assertIsNone(issue.url)
+        self.assertIsNone(issue.creator)
+        self.assertEqual(issue.labels, [])
+        self.assertEqual(issue.number, -1)
+    
+    def test_initialization_with_json(self):
+        """Test Issue initialization with JSON"""
+        from model import Issue
+        jobj = {
+            'url': 'https://github.com/repo/issues/1',
+            'creator': 'user1',
+            'labels': ['bug', 'high-priority'],
+            'state': 'open',
+            'assignees': ['dev1', 'dev2'],
+            'title': 'Test Issue',
+            'text': 'Issue description',
+            'number': '123',
+            'created_date': '2024-01-15T10:00:00Z',
+            'updated_date': '2024-01-16T12:00:00Z',
+            'timeline_url': 'https://github.com/repo/issues/1/timeline',
+            'events': [
+                {'event_type': 'commented', 'author': 'user2', 'event_date': '2024-01-15T11:00:00Z'}
+            ]
+        }
+        issue = Issue(jobj)
+        
+        self.assertEqual(issue.url, 'https://github.com/repo/issues/1')
+        self.assertEqual(issue.creator, 'user1')
+        self.assertEqual(len(issue.labels), 2)
+        self.assertEqual(issue.number, 123)
+        self.assertEqual(len(issue.events), 1)
+    
+    def test_get_labels(self):
+        """Test get_labels method"""
+        from model import Issue
+        issue = Issue({'labels': ['bug', 'enhancement']})
+        
+        self.assertEqual(issue.get_labels(), ['bug', 'enhancement'])
+    
+    def test_get_creation_date(self):
+        """Test get_creation_date method"""
+        from model import Issue
+        issue = Issue({'created_date': '2024-01-15T10:00:00Z'})
+        
+        self.assertIsNotNone(issue.get_creation_date())
+    
+    def test_get_closure_date_with_closed_issue(self):
+        """Test get_closure_date for closed issue"""
+        from model import Issue
+        jobj = {
+            'state': 'closed',
+            'events': [
+                {'event_type': 'closed', 'event_date': '2024-01-20T10:00:00Z'},
+                {'event_type': 'commented', 'event_date': '2024-01-19T10:00:00Z'}
+            ]
+        }
+        issue = Issue(jobj)
+        
+        closure_date = issue.get_closure_date()
+        self.assertIsNotNone(closure_date)
+    
+    def test_get_closure_date_with_open_issue(self):
+        """Test get_closure_date for open issue"""
+        from model import Issue
+        jobj = {
+            'state': 'open',
+            'events': [
+                {'event_type': 'commented', 'event_date': '2024-01-19T10:00:00Z'}
+            ]
+        }
+        issue = Issue(jobj)
+        
+        self.assertIsNone(issue.get_closure_date())
+    
+    def test_is_closed(self):
+        """Test is_closed method"""
+        from model import Issue
+        closed_issue = Issue({'state': 'closed'})
+        open_issue = Issue({'state': 'open'})
+        
+        self.assertTrue(closed_issue.is_closed())
+        self.assertFalse(open_issue.is_closed())
+    
+    def test_get_resolution_time(self):
+        """Test get_resolution_time calculation"""
+        from model import Issue
+        jobj = {
+            'created_date': '2024-01-15T10:00:00Z',
+            'state': 'closed',
+            'events': [
+                {'event_type': 'closed', 'event_date': '2024-01-17T10:00:00Z'}
+            ]
+        }
+        issue = Issue(jobj)
+        
+        resolution_time = issue.get_resolution_time()
+        self.assertIsNotNone(resolution_time)
+        self.assertEqual(resolution_time.days, 2)
+    
+    def test_get_resolution_time_no_closure(self):
+        """Test get_resolution_time for open issue"""
+        from model import Issue
+        issue = Issue({'state': 'open', 'created_date': '2024-01-15T10:00:00Z'})
+        
+        self.assertIsNone(issue.get_resolution_time())
+    
+    def test_get_comment_count(self):
+        """Test get_comment_count method"""
+        from model import Issue
+        jobj = {
+            'events': [
+                {'event_type': 'commented'},
+                {'event_type': 'closed'},
+                {'event_type': 'commented'},
+                {'event_type': 'commented'}
+            ]
+        }
+        issue = Issue(jobj)
+        
+        self.assertEqual(issue.get_comment_count(), 3)
+    
+    def test_get_event_count(self):
+        """Test get_event_count method"""
+        from model import Issue
+        jobj = {
+            'events': [
+                {'event_type': 'commented'},
+                {'event_type': 'closed'},
+                {'event_type': 'labeled'}
+            ]
+        }
+        issue = Issue(jobj)
+        
+        self.assertEqual(issue.get_event_count(), 3)
+    
+    def test_priority_methods(self):
+        """Test set_priority and get_priority methods"""
+        from model import Issue
+        issue = Issue()
+        
+        self.assertIsNone(issue.get_priority())
+        
+        issue.set_priority('high')
+        self.assertEqual(issue.get_priority(), 'high')
+    
+    def test_invalid_number_handling(self):
+        """Test handling of invalid issue number"""
+        from model import Issue
+        issue = Issue({'number': 'invalid'})
+        
+        self.assertEqual(issue.number, -1)
+
+
+class TestContributor(unittest.TestCase):
+    """Test suite for Contributor class - 90%+ coverage"""
+    
+    def setUp(self):
+        """Set up test fixtures"""
+        from model import Contributor, Issue, Event
+        from datetime import datetime
+        
+        self.Contributor = Contributor
+        self.Issue = Issue
+        self.Event = Event
+        self.datetime = datetime
+    
+    def test_initialization(self):
+        """Test Contributor initialization"""
+        contributor = self.Contributor('user1')
+        
+        self.assertEqual(contributor.username, 'user1')
+        self.assertEqual(len(contributor.issues_created), 0)
+        self.assertEqual(len(contributor.issues_closed), 0)
+        self.assertEqual(len(contributor.comments), 0)
+        self.assertIsNone(contributor.first_activity)
+        self.assertIsNone(contributor.last_activity)
+    
+    def test_add_issue(self):
+        """Test adding issue to contributor"""
+        contributor = self.Contributor('user1')
+        issue = self.Issue({'created_date': '2024-01-15T10:00:00Z'})
+        
+        contributor.add_issue(issue)
+        
+        self.assertEqual(len(contributor.issues_created), 1)
+        self.assertIsNotNone(contributor.first_activity)
+        self.assertIsNotNone(contributor.last_activity)
+    
+    def test_add_comment(self):
+        """Test adding comment to contributor"""
+        contributor = self.Contributor('user1')
+        event = self.Event({'event_type': 'commented', 'event_date': '2024-01-15T12:00:00Z'})
+        
+        contributor.add_comment(event)
+        
+        self.assertEqual(len(contributor.comments), 1)
+        self.assertIsNotNone(contributor.first_activity)
+    
+    def test_add_closed_issue(self):
+        """Test adding closed issue"""
+        contributor = self.Contributor('user1')
+        issue = self.Issue({
+            'state': 'closed',
+            'events': [{'event_type': 'closed', 'event_date': '2024-01-20T10:00:00Z'}]
+        })
+        
+        contributor.add_closed_issue(issue)
+        
+        self.assertEqual(len(contributor.issues_closed), 1)
+    
+    def test_activity_date_tracking(self):
+        """Test first and last activity date tracking"""
+        contributor = self.Contributor('user1')
+        
+        issue1 = self.Issue({'created_date': '2024-01-10T10:00:00Z'})
+        issue2 = self.Issue({'created_date': '2024-01-20T10:00:00Z'})
+        issue3 = self.Issue({'created_date': '2024-01-15T10:00:00Z'})
+        
+        contributor.add_issue(issue1)
+        contributor.add_issue(issue2)
+        contributor.add_issue(issue3)
+        
+        # First activity should be earliest
+        self.assertEqual(contributor.first_activity.day, 10)
+        # Last activity should be latest
+        self.assertEqual(contributor.last_activity.day, 20)
+    
+    def test_get_activity_count(self):
+        """Test total activity count calculation"""
+        contributor = self.Contributor('user1')
+        
+        issue1 = self.Issue({'created_date': '2024-01-15T10:00:00Z'})
+        issue2 = self.Issue({'created_date': '2024-01-16T10:00:00Z'})
+        contributor.add_issue(issue1)
+        contributor.add_issue(issue2)
+        
+        event = self.Event({'event_type': 'commented', 'event_date': '2024-01-17T10:00:00Z'})
+        contributor.add_comment(event)
+        
+        closed_issue = self.Issue({
+            'state': 'closed',
+            'events': [{'event_type': 'closed', 'event_date': '2024-01-18T10:00:00Z'}]
+        })
+        contributor.add_closed_issue(closed_issue)
+        
+        self.assertEqual(contributor.get_activity_count(), 4)
+    
+    def test_get_activity_count_by_year(self):
+        """Test activity count for specific year"""
+        contributor = self.Contributor('user1')
+        
+        issue_2023 = self.Issue({'created_date': '2023-01-15T10:00:00Z'})
+        issue_2024 = self.Issue({'created_date': '2024-01-15T10:00:00Z'})
+        contributor.add_issue(issue_2023)
+        contributor.add_issue(issue_2024)
+        
+        event_2024 = self.Event({'event_type': 'commented', 'event_date': '2024-02-15T10:00:00Z'})
+        contributor.add_comment(event_2024)
+        
+        self.assertEqual(contributor.get_activity_count_by_year(2023), 1)
+        self.assertEqual(contributor.get_activity_count_by_year(2024), 2)
+    
+    def test_get_active_years(self):
+        """Test getting all active years"""
+        contributor = self.Contributor('user1')
+        
+        issue_2022 = self.Issue({'created_date': '2022-01-15T10:00:00Z'})
+        issue_2023 = self.Issue({'created_date': '2023-01-15T10:00:00Z'})
+        issue_2024 = self.Issue({'created_date': '2024-01-15T10:00:00Z'})
+        
+        contributor.add_issue(issue_2022)
+        contributor.add_issue(issue_2023)
+        contributor.add_issue(issue_2024)
+        
+        active_years = contributor.get_active_years()
+        
+        self.assertEqual(len(active_years), 3)
+        self.assertIn(2022, active_years)
+        self.assertIn(2023, active_years)
+        self.assertIn(2024, active_years)
+    
+    def test_update_activity_with_none_date(self):
+        """Test activity update handles None dates gracefully"""
+        contributor = self.Contributor('user1')
+        issue = self.Issue()  # No date
+        
+        contributor.add_issue(issue)
+        
+        self.assertIsNone(contributor.first_activity)
+        self.assertIsNone(contributor.last_activity)
+
+
 if __name__ == '__main__':
     unittest.main()
