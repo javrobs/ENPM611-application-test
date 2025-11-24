@@ -293,26 +293,14 @@ class TestLabelResolutionController(unittest.TestCase):
         mock_features.return_value = ([[1, 2, 3]] * 10, [10] * 10)
         mock_names.return_value = ['feature1', 'feature2', 'feature3']
 
-        # Mock the predictor training
-        with patch.object(self.controller.predictor, 'train') as mock_train:
-            mock_train.return_value = {
-                'status': 'success',
-                'training_samples': 10,
-                'ensemble': {'r2_score': 0.85, 'mae_days': 5.2},
-                'random_forest': {'r2_score': 0.82, 'mae_days': 5.5},
-                'gradient_boosting': {'r2_score': 0.83, 'mae_days': 5.3},
-                'feature_importance': {'label_count': 0.3}
-            }
+        with patch.object(self.controller, '_predict_open_issues') as mock_pred_open:
+            mock_pred_open.return_value = []
 
-            # Mock _predict_open_issues
-            with patch.object(self.controller, '_predict_open_issues') as mock_pred_open:
-                mock_pred_open.return_value = []
-
-                # Mock save and print methods
-                with patch.object(self.controller, '_save_results'):
-                    with patch.object(self.controller, '_print_summary'):
-                        # Run the analysis
-                        results = self.controller.run_full_analysis()
+            # Mock save and print methods
+            with patch.object(self.controller, '_save_results'):
+                with patch.object(self.controller, '_print_summary'):
+                    # Run the analysis
+                    results = self.controller.run_full_analysis()
 
         # Assertions
         mock_analyze.assert_called_once()
@@ -326,6 +314,40 @@ class TestLabelResolutionController(unittest.TestCase):
         self.assertIn('label_statistics', results)
         self.assertIn('model_performance', results)
         self.assertIn('open_issue_predictions', results)
+        
+        # Verify model was actually trained
+        self.assertEqual(results['model_performance']['status'], 'success')
+        self.assertIn('ensemble', results['model_performance'])
+
+    @patch('controllers.label_resolution_controller.LabelResolutionAnalyzer.analyze_closed_issues')
+    @patch('controllers.label_resolution_controller.LabelResolutionAnalyzer.get_summary_statistics')
+    @patch('controllers.label_resolution_controller.LabelResolutionAnalyzer.extract_features_for_ml')
+    @patch('controllers.label_resolution_controller.LabelResolutionAnalyzer.get_feature_names')
+    def test_run_full_analysis_insufficient_samples(self, mock_names, mock_features, mock_summary, mock_analyze):
+        """Test run_full_analysis with insufficient training samples (< 10)"""
+        # Setup mocks with only 5 samples
+        mock_analyze.return_value = {'bug': {'count': 5, 'median_days': 10}}
+        mock_summary.return_value = {
+            'total_closed_issues': 5,
+            'total_unique_labels': 2,
+            'overall_median_days': 15,
+            'overall_mean_days': 20
+        }
+        mock_features.return_value = ([[1, 2, 3]] * 5, [10] * 5)  # Only 5 samples
+        mock_names.return_value = ['feature1', 'feature2', 'feature3']
+
+        # Mock save and print methods
+        with patch.object(self.controller, '_save_results'):
+            with patch.object(self.controller, '_print_summary'):
+                # Run the analysis
+                results = self.controller.run_full_analysis()
+
+        # Assertions - predictor should fail due to insufficient samples
+        self.assertIsNotNone(results)
+        self.assertIn('model_performance', results)
+        self.assertEqual(results['model_performance']['status'], 'failed')
+        self.assertIn('error', results['model_performance'])
+        self.assertIn('insufficient', results['model_performance']['error'].lower())
 
     def test_query_label_resolution_time(self):
         """Test query_label_resolution_time - called in Feature 1"""
