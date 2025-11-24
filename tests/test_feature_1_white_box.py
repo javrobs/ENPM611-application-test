@@ -16,7 +16,7 @@ from analysis.label_resolution_analyzer import LabelResolutionAnalyzer
 from model import LabelResolutionPredictor
 from visualization.label_resolution_visualizer import LabelResolutionVisualizer
 from data_loader import DataLoader
-
+from utils.datetime_helper import extract_day_hour
 
 class TestFeatureRunner(unittest.TestCase):
     """Test cases for FeatureRunner - the entry point for Feature 1"""
@@ -225,7 +225,7 @@ class TestLabelResolutionController(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures"""
-        # Create mock issues
+        # Create mock issues with proper datetime objects
         self.mock_issues = self._create_mock_issues()
 
         # Create temporary output directory
@@ -253,6 +253,7 @@ class TestLabelResolutionController(unittest.TestCase):
             issue.created_date = datetime.now() - timedelta(days=30 + i*5)
             issue.closed_at = datetime.now() - timedelta(days=i*2)
             issue.created_at = issue.created_date
+            issue.events = None  # No events needed since closed_at is set
             issues.append(issue)
 
         # Open issues
@@ -265,6 +266,7 @@ class TestLabelResolutionController(unittest.TestCase):
             issue.created_date = datetime.now() - timedelta(days=10 + i)
             issue.closed_at = None
             issue.created_at = issue.created_date
+            issue.events = None
             issues.append(issue)
 
         return issues
@@ -276,23 +278,11 @@ class TestLabelResolutionController(unittest.TestCase):
         self.assertIsInstance(self.controller.predictor, LabelResolutionPredictor)
         self.assertIsInstance(self.controller.output_dir, Path)
 
-    @patch('controllers.label_resolution_controller.LabelResolutionAnalyzer.analyze_closed_issues')
-    @patch('controllers.label_resolution_controller.LabelResolutionAnalyzer.get_summary_statistics')
-    @patch('controllers.label_resolution_controller.LabelResolutionAnalyzer.extract_features_for_ml')
-    @patch('controllers.label_resolution_controller.LabelResolutionAnalyzer.get_feature_names')
-    def test_run_full_analysis(self, mock_names, mock_features, mock_summary, mock_analyze):
+    def test_run_full_analysis(self):
         """Test run_full_analysis - the main method called by Feature 1"""
-        # Setup mocks
-        mock_analyze.return_value = {'bug': {'count': 5, 'median_days': 10}}
-        mock_summary.return_value = {
-            'total_closed_issues': 10,
-            'total_unique_labels': 3,
-            'overall_median_days': 15,
-            'overall_mean_days': 20
-        }
-        mock_features.return_value = ([[1, 2, 3]] * 10, [10] * 10)
-        mock_names.return_value = ['feature1', 'feature2', 'feature3']
-
+        # Don't mock analyzer or predictor - let them run actual logic
+        
+        # Mock only _predict_open_issues, save and print methods
         with patch.object(self.controller, '_predict_open_issues') as mock_pred_open:
             mock_pred_open.return_value = []
 
@@ -303,11 +293,6 @@ class TestLabelResolutionController(unittest.TestCase):
                     results = self.controller.run_full_analysis()
 
         # Assertions
-        mock_analyze.assert_called_once()
-        mock_summary.assert_called_once()
-        mock_features.assert_called_once()
-        mock_names.assert_called_once()
-
         self.assertIsNotNone(results)
         self.assertIn('analysis_date', results)
         self.assertIn('summary_statistics', results)
@@ -315,80 +300,160 @@ class TestLabelResolutionController(unittest.TestCase):
         self.assertIn('model_performance', results)
         self.assertIn('open_issue_predictions', results)
         
+        # Verify analyzer ran successfully
+        self.assertGreater(results['summary_statistics']['total_closed_issues'], 0)
+        self.assertGreater(len(results['label_statistics']), 0)
+        
         # Verify model was actually trained
         self.assertEqual(results['model_performance']['status'], 'success')
         self.assertIn('ensemble', results['model_performance'])
+        self.assertIn('training_samples', results['model_performance'])
 
-    @patch('controllers.label_resolution_controller.LabelResolutionAnalyzer.analyze_closed_issues')
-    @patch('controllers.label_resolution_controller.LabelResolutionAnalyzer.get_summary_statistics')
-    @patch('controllers.label_resolution_controller.LabelResolutionAnalyzer.extract_features_for_ml')
-    @patch('controllers.label_resolution_controller.LabelResolutionAnalyzer.get_feature_names')
-    def test_run_full_analysis_insufficient_samples(self, mock_names, mock_features, mock_summary, mock_analyze):
+    def test_run_full_analysis_insufficient_samples(self):
         """Test run_full_analysis with insufficient training samples (< 10)"""
-        # Setup mocks with only 5 samples
-        mock_analyze.return_value = {'bug': {'count': 5, 'median_days': 10}}
-        mock_summary.return_value = {
-            'total_closed_issues': 5,
-            'total_unique_labels': 2,
-            'overall_median_days': 15,
-            'overall_mean_days': 20
-        }
-        mock_features.return_value = ([[1, 2, 3]] * 5, [10] * 5)  # Only 5 samples
-        mock_names.return_value = ['feature1', 'feature2', 'feature3']
+        # Create controller with only 5 closed issues
+        small_issues = []
+        for i in range(5):
+            issue = Mock()
+            issue.number = i + 1
+            issue.state = 'closed'
+            issue.title = f'Test Issue {i + 1}'
+            issue.labels = ['bug']
+            issue.created_date = datetime.now() - timedelta(days=20 + i*2)
+            issue.closed_at = datetime.now() - timedelta(days=i)
+            issue.created_at = issue.created_date
+            issue.events = None
+            small_issues.append(issue)
+        
+        small_controller = LabelResolutionController(small_issues)
+        small_controller.output_dir = Path(self.temp_dir)
 
         # Mock save and print methods
-        with patch.object(self.controller, '_save_results'):
-            with patch.object(self.controller, '_print_summary'):
+        with patch.object(small_controller, '_save_results'):
+            with patch.object(small_controller, '_print_summary'):
                 # Run the analysis
-                results = self.controller.run_full_analysis()
+                results = small_controller.run_full_analysis()
 
         # Assertions - predictor should fail due to insufficient samples
         self.assertIsNotNone(results)
         self.assertIn('model_performance', results)
-        self.assertEqual(results['model_performance']['status'], 'failed')
-        self.assertIn('error', results['model_performance'])
-        self.assertIn('insufficient', results['model_performance']['error'].lower())
+        self.assertEqual(results['model_performance']['status'], 'error')
+        self.assertIn('insufficient', results['model_performance']['message'].lower())
+        
+        # But analyzer should still work
+        self.assertGreater(results['summary_statistics']['total_closed_issues'], 0)
+        self.assertIn('bug', results['label_statistics'])
+
+    def test_analyzer_statistics_accuracy(self):
+        """Test that analyzer calculates statistics correctly"""
+        # Run analyzer directly
+        self.controller.analyzer.analyze_closed_issues()
+        
+        # Verify label stats were calculated
+        self.assertGreater(len(self.controller.analyzer.label_stats), 0)
+        
+        # Check that bug label exists (5 issues have bug label)
+        self.assertIn('bug', self.controller.analyzer.label_stats)
+        bug_stats = self.controller.analyzer.label_stats['bug']
+        
+        # Verify statistics structure
+        self.assertIn('count', bug_stats)
+        self.assertIn('median_days', bug_stats)
+        self.assertIn('mean_days', bug_stats)
+        self.assertIn('std_dev_hours', bug_stats)
+        
+        # Verify count is correct (5 closed issues have bug label)
+        self.assertEqual(bug_stats['count'], 5)
+        
+        # Verify resolution data was stored
+        self.assertGreater(len(self.controller.analyzer.resolution_data), 0)
+
+    def test_analyzer_feature_extraction(self):
+        """Test that analyzer extracts features correctly"""
+        # Run analyzer first to populate resolution_data
+        self.controller.analyzer.analyze_closed_issues()
+        
+        # Extract features
+        features, labels = self.controller.analyzer.extract_features_for_ml()
+        
+        # Verify features and labels
+        self.assertIsInstance(features, list)
+        self.assertIsInstance(labels, list)
+        self.assertEqual(len(features), len(labels))
+        self.assertGreater(len(features), 0)
+        
+        # Verify feature vector structure
+        feature_names = self.controller.analyzer.get_feature_names()
+        self.assertEqual(len(features[0]), len(feature_names))
+        
+        # Verify feature names
+        expected_features = [
+            'num_labels',
+            'has_bug_label',
+            'has_feature_label',
+            'has_docs_label',
+            'has_area_label',
+            'day_of_week',
+            'month'
+        ]
+        self.assertEqual(feature_names, expected_features)
+
+    def test_analyzer_summary_statistics(self):
+        """Test that analyzer calculates summary statistics correctly"""
+        # Run analyzer first
+        self.controller.analyzer.analyze_closed_issues()
+        
+        # Get summary statistics
+        summary = self.controller.analyzer.get_summary_statistics()
+        
+        # Verify summary structure
+        self.assertIn('total_closed_issues', summary)
+        self.assertIn('total_unique_labels', summary)
+        self.assertIn('overall_median_days', summary)
+        self.assertIn('overall_mean_days', summary)
+        
+        # Verify values
+        self.assertEqual(summary['total_closed_issues'], 10)  # 10 closed issues
+        self.assertGreater(summary['total_unique_labels'], 0)
+        self.assertGreater(summary['overall_median_days'], 0)
 
     def test_query_label_resolution_time(self):
         """Test query_label_resolution_time - called in Feature 1"""
-        # Setup analyzer with mock data
-        self.controller.analyzer.label_stats = {
-            'bug': {
-                'count': 5,
-                'median_days': 10.5,
-                'mean_days': 12.0,
-                'std_days': 3.2
-            }
-        }
+        # Run analyzer first to populate label_stats
+        self.controller.analyzer.analyze_closed_issues()
 
-        with patch.object(self.controller.analyzer, 'get_label_prediction_time') as mock_predict:
-            mock_predict.return_value = {
-                'status': 'success',
-                'predicted_days': 10.5,
-                'based_on_issues': 5,
-                'confidence_range': {'min_days': 7.3, 'max_days': 13.7}
-            }
-
-            result = self.controller.query_label_resolution_time('bug')
+        # Query for bug label
+        result = self.controller.query_label_resolution_time('bug')
 
         self.assertEqual(result['status'], 'success')
         self.assertIn('predicted_days', result)
         self.assertIn('based_on_issues', result)
         self.assertIn('confidence_range', result)
+        self.assertEqual(result['based_on_issues'], 5)
+
+    def test_query_label_resolution_time_unknown_label(self):
+        """Test query for unknown label"""
+        # Run analyzer first
+        self.controller.analyzer.analyze_closed_issues()
+        
+        # Query for non-existent label
+        result = self.controller.query_label_resolution_time('nonexistent')
+        
+        self.assertEqual(result['status'], 'unknown')
+        self.assertIn('message', result)
 
     def test_predict_open_issues(self):
         """Test _predict_open_issues - internal method used in run_full_analysis"""
-        with patch.object(self.controller.predictor, 'predict') as mock_predict:
-            mock_predict.return_value = {
-                'status': 'success',
-                'predicted_days': 15.5,
-                'confidence_interval': {'lower_days': 10.0, 'upper_days': 21.0}
-            }
+        # Run analyzer first
+        self.controller.analyzer.analyze_closed_issues()
+        
+        # Train predictor
+        features, labels = self.controller.analyzer.extract_features_for_ml()
+        feature_names = self.controller.analyzer.get_feature_names()
+        self.controller.predictor.train(features, labels, feature_names)
 
-            with patch.object(self.controller.analyzer, '_extract_feature_vector') as mock_extract:
-                mock_extract.return_value = [1, 2, 3]
-
-                predictions = self.controller._predict_open_issues()
+        # Predict open issues
+        predictions = self.controller._predict_open_issues()
 
         # Should have predictions for open issues only (5 in our mock data)
         self.assertEqual(len(predictions), 5)
@@ -491,7 +556,7 @@ class TestLabelResolutionVisualizer(unittest.TestCase):
 
         # Should generate 6 visualizations (plot_temporal_trends is not implemented)
         self.assertEqual(mock_savefig.call_count, 6)
-        self.assertEqual(mock_close.call_count, 7)
+        self.assertEqual(mock_close.call_count, 6)
 
     @patch('matplotlib.pyplot.savefig')
     @patch('matplotlib.pyplot.close')
@@ -649,6 +714,29 @@ class TestFeatureRunnerIntegration(unittest.TestCase):
             issues.append(issue)
 
         return issues
+
+class TestDateTimeHelper(unittest.TestCase):
+    """Essential test cases for datetime_helper module"""
+
+    def test_extract_day_hour_with_datetime(self):
+        """Test extract_day_hour with valid datetime"""
+        dt = datetime(2025, 1, 6, 14, 30, 0)  # Monday 14:30
+        result = extract_day_hour(dt)
+        self.assertEqual(result, (0, 14))
+
+    def test_extract_day_hour_with_none(self):
+        """Test extract_day_hour with None"""
+        result = extract_day_hour(None)
+        self.assertIsNone(result)
+
+    def test_extract_day_hour_different_days(self):
+        """Test extract_day_hour for different days"""
+        test_cases = [
+            (datetime(2025, 1, 6, 10, 0), (0, 10)),   # Monday
+            (datetime(2025, 1, 12, 23, 0), (6, 23)),  # Sunday
+        ]
+        for dt, expected in test_cases:
+            self.assertEqual(extract_day_hour(dt), expected)
 
 def suite():
     """Create a test suite containing all test cases"""
