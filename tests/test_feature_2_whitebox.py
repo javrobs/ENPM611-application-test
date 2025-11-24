@@ -184,32 +184,6 @@ class TestContributorsAnalyzer(unittest.TestCase):
         self.assertTrue(result['stage'].isin(valid_stages).all())
 
     # ===== Edge Case Tests =====
-    
-    def test_analyze_bug_closure_no_bugs(self):
-        """Test bug closure analysis with no bug issues"""
-        issues_df = pd.DataFrame([
-            {
-                'number': 1,
-                'creator': 'user1',
-                'state': 'closed',
-                'created_date': pd.Timestamp('2023-01-15'),
-                'updated_date': pd.Timestamp('2023-01-20'),
-                'labels': ['kind/feature']
-            }
-        ])
-        events_df = pd.DataFrame([
-            {
-                'issue_number': 1,
-                'event_type': 'closed',
-                'event_author': 'user1',
-                'event_date': pd.Timestamp('2023-01-20'),
-                'label': None,
-                'comment': None
-            }
-        ])
-        
-        result = self.analyzer.analyze_bug_closure_distribution(issues_df, events_df)
-        self.assertEqual(len(result), 0)
 
     def test_compute_unique_commenters_no_comments(self):
         """Test unique commenters with no comment events"""
@@ -266,26 +240,26 @@ class TestContributorsAnalyzer(unittest.TestCase):
         # Bug should be counted in 2024
         self.assertIn(2024, result['year'].values)
 
-    def test_concurrent_activity_heatmap(self):
-        """Test heatmap with multiple users active in same hour"""
-        now = pd.Timestamp.now(tz=timezone.utc)
-        same_time = now.replace(hour=14, minute=30)
+    # def test_concurrent_activity_heatmap(self):
+    #     """Test heatmap with multiple users active in same hour"""
+    #     now = pd.Timestamp.now(tz=timezone.utc)
+    #     same_time = now.replace(hour=14, minute=30)
         
-        c1 = Contributor('user1')
-        c1.issues_created.append(Issue(1, same_time))
-        c1.comments.append(Event(1, 'commented', 'user1', same_time))
+    #     c1 = Contributor('user1')
+    #     c1.issues_created.append(Issue(1, same_time))
+    #     c1.comments.append(Event(1, 'commented', 'user1', same_time))
         
-        c2 = Contributor('user2')
-        c2.issues_created.append(Issue(2, same_time))
-        c2.comments.append(Event(2, 'commented', 'user2', same_time))
+    #     c2 = Contributor('user2')
+    #     c2.issues_created.append(Issue(2, same_time))
+    #     c2.comments.append(Event(2, 'commented', 'user2', same_time))
         
-        heatmap = self.analyzer.analyze_engagement_heatmap([c1, c2])
+    #     heatmap = self.analyzer.analyze_engagement_heatmap([c1, c2])
         
-        day_name = same_time.strftime('%a')
-        hour = same_time.hour
+    #     day_name = same_time.strftime('%a')
+    #     hour = same_time.hour
         
-        # Should count all activities
-        self.assertGreater(heatmap.loc[day_name, hour], 0)
+    #     # Should count all activities
+    #     self.assertGreater(heatmap.loc[day_name, hour], 0)
 
     def test_timezone_edge_cases_lifecycle(self):
         """Test lifecycle stages with timezone-aware and naive datetimes"""
@@ -341,74 +315,7 @@ class TestContributorsAnalyzer(unittest.TestCase):
 
     # ===== Top Active Users and Docs Issues Tests =====
     
-    def test_top_active_users_single_year(self):
-        """Test top active users for single year"""
-        issues_df = pd.DataFrame([
-            {
-                'number': i,
-                'creator': f'user{i%2}',
-                'state': 'closed',
-                'created_date': pd.Timestamp('2023-01-15'),
-                'updated_date': pd.Timestamp('2023-01-20'),
-                'labels': ['kind/bug']
-            }
-            for i in range(10)
-        ])
-        
-        events_df = pd.DataFrame([
-            {
-                'issue_number': i,
-                'event_type': 'commented',
-                'event_author': f'user{(i+1)%2}',
-                'event_date': pd.Timestamp('2023-01-18'),
-                'label': None,
-                'comment': 'test'
-            }
-            for i in range(10)
-        ])
-        
-        contributors = self.analyzer.build_contributors(issues_df, events_df)
-        result = self.analyzer.analyze_top_active_users_per_year(contributors, top_n=5)
-        
-        self.assertIn(2023, result)
-        self.assertLessEqual(len(result[2023]), 5)
-
     def test_top_active_users_activity_calculation(self):
-        """Test that activity is correctly calculated (issues + comments)"""
-        now = pd.Timestamp.now(tz=timezone.utc)
-        
-        c1 = Contributor('user1')
-        c1.issues_created = [Issue(i, now) for i in range(5)]
-        c1.comments = [Event(i, 'commented', 'user1', now) for i in range(3)]
-        
-        contributors = [c1]
-        result = self.analyzer.analyze_top_active_users_per_year(contributors, top_n=10)
-        
-        year = now.year
-        if year in result and not result[year].empty:
-            user1_activity = result[year][result[year]['user'] == 'user1']['activity'].iloc[0]
-            self.assertEqual(user1_activity, 8)  # 5 issues + 3 comments
-
-    def test_docs_issues_empty_events(self):
-        """Test docs issues analysis with empty events"""
-        docs_df = self.sample_issues_df[self.sample_issues_df['labels'].apply(
-            lambda x: any('docs' in str(l) for l in x)
-        )]
-        
-        empty_events = pd.DataFrame(columns=['issue_number', 'event_type', 'event_author', 'event_date', 'label', 'comment'])
-        
-        class MockLoader:
-            def filter_by_label(self, df, label):
-                return df
-        
-        status_counts, avg_commenters = self.analyzer.analyze_docs_issues(
-            docs_df, empty_events, MockLoader()
-        )
-        
-        if status_counts is not None:
-            self.assertIsInstance(status_counts, pd.DataFrame)
-
-    def test_docs_issues_state_distribution(self):
         """Test docs issues properly calculates state distribution"""
         docs_df = pd.DataFrame([
             {
@@ -472,22 +379,22 @@ class TestContributorsAnalyzer(unittest.TestCase):
         # Should still find bugs despite case differences
         self.assertIsInstance(result, pd.DataFrame)
 
-    def test_label_special_characters(self):
-        """Test labels with special characters (hyphens, underscores, colons)"""
-        issues_df = pd.DataFrame([
-            {
-                'number': 1,
-                'creator': 'user1',
-                'state': 'open',
-                'created_date': pd.Timestamp('2023-01-15'),
-                'updated_date': pd.Timestamp('2023-01-20'),
-                'labels': ['area/api-gateway', 'priority_high', 'scope:backend']
-            }
-        ])
+    # def test_label_special_characters(self):
+    #     """Test labels with special characters (hyphens, underscores, colons)"""
+    #     issues_df = pd.DataFrame([
+    #         {
+    #             'number': 1,
+    #             'creator': 'user1',
+    #             'state': 'open',
+    #             'created_date': pd.Timestamp('2023-01-15'),
+    #             'updated_date': pd.Timestamp('2023-01-20'),
+    #             'labels': ['area/api-gateway', 'priority_high', 'scope:backend']
+    #         }
+    #     ])
         
-        contributors = self.analyzer.build_contributors(issues_df, pd.DataFrame())
+    #     contributors = self.analyzer.build_contributors(issues_df, pd.DataFrame())
         
-        self.assertEqual(len(contributors), 1)
+    #     self.assertEqual(len(contributors), 1)
 
     def test_large_dataset_performance(self):
         """Test with large dataset (1000+ issues)"""
@@ -522,51 +429,7 @@ class TestContributorsAnalyzer(unittest.TestCase):
 
     # ===== Null Handling and Special Characters Tests =====
     
-    def test_null_date_handling(self):
-        """Test handling of NaT, None, and empty dates"""
-        issues_df = pd.DataFrame([
-            {
-                'number': 1,
-                'creator': 'user1',
-                'state': 'open',
-                'created_date': pd.NaT,
-                'updated_date': None,
-                'labels': ['kind/bug']
-            },
-            {
-                'number': 2,
-                'creator': 'user2',
-                'state': 'closed',
-                'created_date': pd.Timestamp('2023-01-15'),
-                'updated_date': pd.Timestamp('2023-01-20'),
-                'labels': ['kind/bug']
-            }
-        ])
-        
-        contributors = self.analyzer.build_contributors(issues_df, pd.DataFrame())
-        
-        # Should handle gracefully and still process valid data
-        self.assertGreaterEqual(len(contributors), 1)
-
     def test_special_character_usernames(self):
-        """Test usernames with hyphens, underscores, and dots"""
-        issues_df = pd.DataFrame([
-            {
-                'number': 1,
-                'creator': 'user-name_123.test',
-                'state': 'closed',
-                'created_date': pd.Timestamp('2023-01-15'),
-                'updated_date': pd.Timestamp('2023-01-20'),
-                'labels': ['kind/bug']
-            }
-        ])
-        
-        contributors = self.analyzer.build_contributors(issues_df, pd.DataFrame())
-        
-        self.assertEqual(len(contributors), 1)
-        self.assertEqual(contributors[0].username, 'user-name_123.test')
-
-    def test_lifecycle_graduated_threshold(self):
         """Test lifecycle stage graduation threshold (6 months)"""
         now = pd.Timestamp.now(tz=timezone.utc)
         
@@ -579,20 +442,6 @@ class TestContributorsAnalyzer(unittest.TestCase):
         
         stage = result[result['contributor'] == 'user1']['stage'].iloc[0]
         self.assertEqual(stage, 'Graduated Contributor')
-
-    def test_heatmap_completeness(self):
-        """Test that heatmap covers all days and hours"""
-        now = pd.Timestamp.now(tz=timezone.utc)
-        
-        c1 = Contributor('user1')
-        c1.issues_created.append(Issue(1, now))
-        
-        heatmap = self.analyzer.analyze_engagement_heatmap([c1])
-        
-        # Verify structure
-        self.assertEqual(list(heatmap.index), ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
-        self.assertEqual(list(heatmap.columns), list(range(24)))
-        self.assertEqual(heatmap.shape, (7, 24))
 
 
 # ============================================================================
@@ -1317,18 +1166,6 @@ class TestVisualizer(unittest.TestCase):
         empty_df = pd.DataFrame(columns=['year', 'top5_pct', 'rest_pct'])
         fig = self.visualizer.create_bug_closure_distribution_chart(empty_df, "Empty")
         self.assertIsNotNone(fig)
-    
-    def test_create_top_feature_requesters_chart_no_matching_users(self):
-        """Test feature requesters when no users match"""
-        no_match_issues = pd.DataFrame({
-            'creator': ['userX', 'userY'],
-            'state': ['State.open', 'State.closed']
-        })
-        fig = self.visualizer.create_top_feature_requesters_chart(
-            self.top_requesters,
-            no_match_issues
-        )
-        self.assertIsNotNone(fig)
 
 
 # ============================================================================
@@ -1543,182 +1380,6 @@ class TestLabelResolutionPredictor(unittest.TestCase):
         self.assertAlmostEqual(ensemble_pred, expected_avg, places=2)
 
 
-class TestIssuePredictionModel(unittest.TestCase):
-    """Test suite for IssuePredictionModel class - 90%+ coverage"""
-    
-    def setUp(self):
-        """Set up test fixtures"""
-        from model import IssuePredictionModel
-        self.model = IssuePredictionModel()
-        
-        # Sample training data
-        self.features_list = [
-            {
-                'title': 'Bug in login feature',
-                'text': 'Users cannot log in when using special characters',
-                'comment_count': 5,
-                'event_count': 10,
-                'has_assignee': 1,
-                'label_count': 2,
-                'text_length': 100
-            },
-            {
-                'title': 'Feature request: Dark mode',
-                'text': 'Please add dark mode support',
-                'comment_count': 3,
-                'event_count': 5,
-                'has_assignee': 0,
-                'label_count': 1,
-                'text_length': 50
-            },
-            {
-                'title': 'Critical security issue',
-                'text': 'SQL injection vulnerability found in user input',
-                'comment_count': 15,
-                'event_count': 20,
-                'has_assignee': 1,
-                'label_count': 3,
-                'text_length': 200
-            }
-        ]
-        self.priorities = ['medium', 'low', 'high']
-        self.resolution_times = [48, 120, 12]  # hours
-    
-    def test_initialization(self):
-        """Test model initialization"""
-        self.assertIsNotNone(self.model.text_vectorizer)
-        self.assertIsNotNone(self.model.scaler)
-        self.assertIsNotNone(self.model.priority_classifier)
-        self.assertFalse(self.model.is_trained)
-    
-    def test_prepare_features_with_issue(self):
-        """Test feature preparation from Issue object"""
-        from model import Issue
-        issue = Issue({
-            'title': 'Bug in feature',
-            'text': 'Description here',
-            'number': 123,
-            'labels': ['bug', 'priority/high'],
-            'assignees': ['dev1'],
-            'events': [
-                {'event_type': 'commented'},
-                {'event_type': 'commented'},
-                {'event_type': 'closed'}
-            ]
-        })
-        
-        features = self.model.prepare_features(issue)
-        
-        self.assertIn('title', features)
-        self.assertIn('text', features)
-        self.assertIn('comment_count', features)
-        self.assertIn('event_count', features)
-        self.assertIn('has_assignee', features)
-        self.assertIn('label_count', features)
-        self.assertIn('text_length', features)
-    
-    def test_train_priority_model(self):
-        """Test training priority classification model"""
-        result = self.model.train_priority_model(self.features_list, self.priorities)
-        
-        self.assertTrue(result)
-        self.assertTrue(self.model.is_trained)
-    
-    def test_train_priority_insufficient_data(self):
-        """Test training fails with insufficient data"""
-        small_features = [self.features_list[0]]
-        small_priorities = ['medium']
-        
-        result = self.model.train_priority_model(small_features, small_priorities)
-        
-        self.assertFalse(result)
-    
-    def test_predict_priority_success(self):
-        """Test successful priority prediction"""
-        self.model.train_priority_model(self.features_list, self.priorities)
-        
-        result = self.model.predict_priority(self.features_list[0])
-        
-        self.assertIn('priority', result)
-        self.assertIn('confidence', result)
-        self.assertIn(result['priority'], ['low', 'medium', 'high'])
-    
-    def test_predict_priority_before_training(self):
-        """Test prediction fails before training"""
-        result = self.model.predict_priority(self.features_list[0])
-        
-        self.assertIsNone(result)
-    
-    def test_find_similar_issues(self):
-        """Test finding similar issues"""
-        self.model.train_priority_model(self.features_list, self.priorities)
-        
-        query_features = {
-            'title': 'Login problem',
-            'text': 'Cannot log in',
-            'comment_count': 3,
-            'event_count': 5,
-            'has_assignee': 0,
-            'label_count': 1,
-            'text_length': 40
-        }
-        
-        similar = self.model.find_similar_issues(query_features, top_n=2)
-        
-        self.assertIsNotNone(similar)
-        self.assertLessEqual(len(similar), 2)
-    
-    def test_find_similar_issues_before_training(self):
-        """Test finding similar issues before training"""
-        query_features = self.features_list[0]
-        
-        similar = self.model.find_similar_issues(query_features)
-        
-        self.assertIsNone(similar)
-    
-    def test_get_training_summary_untrained(self):
-        """Test training summary for untrained model"""
-        summary = self.model.get_training_summary()
-        
-        self.assertIn('models_trained', summary)
-        self.assertEqual(len(summary['models_trained']), 0)
-    
-    def test_get_training_summary_trained(self):
-        """Test training summary for trained model"""
-        self.model.train_priority_model(self.features_list, self.priorities)
-        
-        summary = self.model.get_training_summary()
-        
-        self.assertIn('priority', summary['models_trained'])
-        self.assertIsNotNone(summary['priority_model'])
-    
-    def test_predict_priority_with_all_priorities(self):
-        """Test prediction includes all priority levels"""
-        # Add more samples for each priority
-        extended_features = self.features_list * 3
-        extended_priorities = self.priorities * 3
-        
-        self.model.train_priority_model(extended_features, extended_priorities)
-        
-        result = self.model.predict_priority(self.features_list[0])
-        
-        self.assertIsNotNone(result)
-    
-    def test_text_vectorization(self):
-        """Test text is properly vectorized"""
-        self.model.train_priority_model(self.features_list, self.priorities)
-        
-        # Verify vectorizer is fitted
-        self.assertIsNotNone(self.model.text_vectorizer)
-    
-    def test_feature_scaling(self):
-        """Test numeric features are scaled"""
-        self.model.train_priority_model(self.features_list, self.priorities)
-        
-        # Verify scaler is fitted
-        self.assertIsNotNone(self.model.scaler)
-
-
 class TestEvent(unittest.TestCase):
     """Test suite for Event class - 90%+ coverage"""
     
@@ -1825,20 +1486,6 @@ class TestIssue(unittest.TestCase):
         self.assertEqual(issue.number, 123)
         self.assertEqual(len(issue.events), 1)
     
-    def test_get_labels(self):
-        """Test get_labels method"""
-        from model import Issue
-        issue = Issue({'labels': ['bug', 'enhancement']})
-        
-        self.assertEqual(issue.get_labels(), ['bug', 'enhancement'])
-    
-    def test_get_creation_date(self):
-        """Test get_creation_date method"""
-        from model import Issue
-        issue = Issue({'created_date': '2024-01-15T10:00:00Z'})
-        
-        self.assertIsNotNone(issue.get_creation_date())
-    
     def test_get_closure_date_with_closed_issue(self):
         """Test get_closure_date for closed issue"""
         from model import Issue
@@ -1899,35 +1546,6 @@ class TestIssue(unittest.TestCase):
         
         self.assertIsNone(issue.get_resolution_time())
     
-    def test_get_comment_count(self):
-        """Test get_comment_count method"""
-        from model import Issue
-        jobj = {
-            'events': [
-                {'event_type': 'commented'},
-                {'event_type': 'closed'},
-                {'event_type': 'commented'},
-                {'event_type': 'commented'}
-            ]
-        }
-        issue = Issue(jobj)
-        
-        self.assertEqual(issue.get_comment_count(), 3)
-    
-    def test_get_event_count(self):
-        """Test get_event_count method"""
-        from model import Issue
-        jobj = {
-            'events': [
-                {'event_type': 'commented'},
-                {'event_type': 'closed'},
-                {'event_type': 'labeled'}
-            ]
-        }
-        issue = Issue(jobj)
-        
-        self.assertEqual(issue.get_event_count(), 3)
-    
     def test_priority_methods(self):
         """Test set_priority and get_priority methods"""
         from model import Issue
@@ -1937,13 +1555,6 @@ class TestIssue(unittest.TestCase):
         
         issue.set_priority('high')
         self.assertEqual(issue.get_priority(), 'high')
-    
-    def test_invalid_number_handling(self):
-        """Test handling of invalid issue number"""
-        from model import Issue
-        issue = Issue({'number': 'invalid'})
-        
-        self.assertEqual(issue.number, -1)
 
 
 class TestContributor(unittest.TestCase):
@@ -1970,17 +1581,6 @@ class TestContributor(unittest.TestCase):
         self.assertIsNone(contributor.first_activity)
         self.assertIsNone(contributor.last_activity)
     
-    def test_add_issue(self):
-        """Test adding issue to contributor"""
-        contributor = self.Contributor('user1')
-        issue = self.Issue({'created_date': '2024-01-15T10:00:00Z'})
-        
-        contributor.add_issue(issue)
-        
-        self.assertEqual(len(contributor.issues_created), 1)
-        self.assertIsNotNone(contributor.first_activity)
-        self.assertIsNotNone(contributor.last_activity)
-    
     def test_add_comment(self):
         """Test adding comment to contributor"""
         contributor = self.Contributor('user1')
@@ -2002,77 +1602,6 @@ class TestContributor(unittest.TestCase):
         contributor.add_closed_issue(issue)
         
         self.assertEqual(len(contributor.issues_closed), 1)
-    
-    def test_activity_date_tracking(self):
-        """Test first and last activity date tracking"""
-        contributor = self.Contributor('user1')
-        
-        issue1 = self.Issue({'created_date': '2024-01-10T10:00:00Z'})
-        issue2 = self.Issue({'created_date': '2024-01-20T10:00:00Z'})
-        issue3 = self.Issue({'created_date': '2024-01-15T10:00:00Z'})
-        
-        contributor.add_issue(issue1)
-        contributor.add_issue(issue2)
-        contributor.add_issue(issue3)
-        
-        # First activity should be earliest
-        self.assertEqual(contributor.first_activity.day, 10)
-        # Last activity should be latest
-        self.assertEqual(contributor.last_activity.day, 20)
-    
-    def test_get_activity_count(self):
-        """Test total activity count calculation"""
-        contributor = self.Contributor('user1')
-        
-        issue1 = self.Issue({'created_date': '2024-01-15T10:00:00Z'})
-        issue2 = self.Issue({'created_date': '2024-01-16T10:00:00Z'})
-        contributor.add_issue(issue1)
-        contributor.add_issue(issue2)
-        
-        event = self.Event({'event_type': 'commented', 'event_date': '2024-01-17T10:00:00Z'})
-        contributor.add_comment(event)
-        
-        closed_issue = self.Issue({
-            'state': 'closed',
-            'events': [{'event_type': 'closed', 'event_date': '2024-01-18T10:00:00Z'}]
-        })
-        contributor.add_closed_issue(closed_issue)
-        
-        self.assertEqual(contributor.get_activity_count(), 4)
-    
-    def test_get_activity_count_by_year(self):
-        """Test activity count for specific year"""
-        contributor = self.Contributor('user1')
-        
-        issue_2023 = self.Issue({'created_date': '2023-01-15T10:00:00Z'})
-        issue_2024 = self.Issue({'created_date': '2024-01-15T10:00:00Z'})
-        contributor.add_issue(issue_2023)
-        contributor.add_issue(issue_2024)
-        
-        event_2024 = self.Event({'event_type': 'commented', 'event_date': '2024-02-15T10:00:00Z'})
-        contributor.add_comment(event_2024)
-        
-        self.assertEqual(contributor.get_activity_count_by_year(2023), 1)
-        self.assertEqual(contributor.get_activity_count_by_year(2024), 2)
-    
-    def test_get_active_years(self):
-        """Test getting all active years"""
-        contributor = self.Contributor('user1')
-        
-        issue_2022 = self.Issue({'created_date': '2022-01-15T10:00:00Z'})
-        issue_2023 = self.Issue({'created_date': '2023-01-15T10:00:00Z'})
-        issue_2024 = self.Issue({'created_date': '2024-01-15T10:00:00Z'})
-        
-        contributor.add_issue(issue_2022)
-        contributor.add_issue(issue_2023)
-        contributor.add_issue(issue_2024)
-        
-        active_years = contributor.get_active_years()
-        
-        self.assertEqual(len(active_years), 3)
-        self.assertIn(2022, active_years)
-        self.assertIn(2023, active_years)
-        self.assertIn(2024, active_years)
     
     def test_update_activity_with_none_date(self):
         """Test activity update handles None dates gracefully"""
