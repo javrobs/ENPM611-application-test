@@ -872,5 +872,464 @@ class TestContributorsController(unittest.TestCase):
         self.assertEqual(result, mock_fig)
 
 
+# ============================================================================
+# Visualizer Tests
+# ============================================================================
+
+
+class TestVisualizer(unittest.TestCase):
+    """Test suite for Visualizer class - 90%+ coverage"""
+    
+    def setUp(self):
+        """Set up test fixtures"""
+        from visualization.visualizer import Visualizer
+        self.visualizer = Visualizer()
+        
+        # Sample data for bug closure distribution
+        self.yearly_distribution = pd.DataFrame({
+            'year': [2020, 2021, 2022],
+            'top5_pct': [60.0, 55.0, 70.0],
+            'rest_pct': [40.0, 45.0, 30.0]
+        })
+        
+        # Sample data for top feature requesters
+        self.top_requesters = pd.Series([15, 12, 10, 8, 7], 
+                                        index=['user1', 'user2', 'user3', 'user4', 'user5'])
+        self.feature_issues = pd.DataFrame({
+            'creator': ['user1', 'user1', 'user2', 'user2', 'user3', 'user3', 'user4', 'user5'],
+            'state': ['State.open', 'State.closed', 'State.open', 'State.closed', 
+                     'State.open', 'State.closed', 'State.open', 'State.closed']
+        })
+        
+        # Sample data for docs issues
+        self.status_counts = pd.DataFrame({
+            'open': [5, 8, 6, 4],
+            'closed': [3, 5, 7, 9]
+        }, index=pd.to_datetime(['2023-01', '2023-02', '2023-03', '2023-04']))
+        self.avg_commenters = pd.Series([2.5, 3.0, 2.8, 3.5], 
+                                       index=self.status_counts.index)
+        
+        # Sample data for issues per user
+        self.issues_per_user = pd.Series([50, 45, 40, 35, 30], 
+                                         index=['user1', 'user2', 'user3', 'user4', 'user5'])
+        self.all_counts = pd.Series([50, 45, 40, 35, 30, 25, 20, 15, 10, 5])
+        
+        # Sample data for engagement heatmap
+        days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+        self.heatmap_df = pd.DataFrame(
+            [[10, 5, 3, 2, 1, 0, 0, 0, 0, 0, 5, 10, 15, 20, 18, 15, 12, 10, 8, 6, 4, 3, 2, 1] for _ in days],
+            index=days,
+            columns=range(24)
+        )
+        
+        # Sample data for lifecycle
+        self.lifecycle_summary = pd.DataFrame({
+            'count': [10, 25, 8, 5]
+        }, index=['Newcomer', 'Active', 'Core Maintainer', 'Graduated Contributor'])
+    
+    def test_create_bug_closure_distribution_chart_success(self):
+        """Test successful creation of bug closure distribution chart"""
+        fig = self.visualizer.create_bug_closure_distribution_chart(
+            self.yearly_distribution, 
+            "Bug Closure Distribution"
+        )
+        self.assertIsNotNone(fig)
+        self.assertEqual(len(fig.axes), 1)
+        ax = fig.axes[0]
+        self.assertEqual(ax.get_title(), "Bug Closure Distribution")
+        self.assertEqual(ax.get_xlabel(), "Year")
+        self.assertEqual(ax.get_ylabel(), "Percentage of Bug Closures (%)")
+    
+    def test_create_bug_closure_distribution_chart_legend(self):
+        """Test legend is present in bug closure chart"""
+        fig = self.visualizer.create_bug_closure_distribution_chart(
+            self.yearly_distribution, 
+            "Test Title"
+        )
+        ax = fig.axes[0]
+        legend = ax.get_legend()
+        self.assertIsNotNone(legend)
+        legend_texts = [t.get_text() for t in legend.get_texts()]
+        self.assertIn("Top 5 Closers", legend_texts)
+        self.assertIn("Rest", legend_texts)
+    
+    def test_create_bug_closure_distribution_chart_single_year(self):
+        """Test chart with single year data"""
+        single_year = pd.DataFrame({
+            'year': [2023],
+            'top5_pct': [75.0],
+            'rest_pct': [25.0]
+        })
+        fig = self.visualizer.create_bug_closure_distribution_chart(
+            single_year, 
+            "Single Year"
+        )
+        self.assertIsNotNone(fig)
+    
+    def test_create_bug_closure_distribution_chart_zero_values(self):
+        """Test chart with zero percentage values"""
+        zero_data = pd.DataFrame({
+            'year': [2023],
+            'top5_pct': [0.0],
+            'rest_pct': [100.0]
+        })
+        fig = self.visualizer.create_bug_closure_distribution_chart(
+            zero_data, 
+            "Zero Top 5"
+        )
+        self.assertIsNotNone(fig)
+    
+    def test_create_top_feature_requesters_chart_success(self):
+        """Test successful creation of top feature requesters chart"""
+        fig = self.visualizer.create_top_feature_requesters_chart(
+            self.top_requesters,
+            self.feature_issues,
+            "Top Requesters"
+        )
+        self.assertIsNotNone(fig)
+        self.assertEqual(len(fig.axes), 1)
+        ax = fig.axes[0]
+        self.assertEqual(ax.get_title(), "Top Requesters")
+        self.assertEqual(ax.get_xlabel(), "Number of Feature Requests")
+        self.assertEqual(ax.get_ylabel(), "Contributor")
+    
+    def test_create_top_feature_requesters_chart_state_replacement(self):
+        """Test that State. prefix is removed from states"""
+        fig = self.visualizer.create_top_feature_requesters_chart(
+            self.top_requesters,
+            self.feature_issues
+        )
+        self.assertIsNotNone(fig)
+    
+    def test_create_top_feature_requesters_chart_inverted_yaxis(self):
+        """Test that y-axis is inverted (highest on top)"""
+        fig = self.visualizer.create_top_feature_requesters_chart(
+            self.top_requesters,
+            self.feature_issues
+        )
+        ax = fig.axes[0]
+        y_lim = ax.get_ylim()
+        self.assertGreater(y_lim[0], y_lim[1])
+    
+    def test_create_top_feature_requesters_chart_legend_present(self):
+        """Test legend is present and has State title"""
+        fig = self.visualizer.create_top_feature_requesters_chart(
+            self.top_requesters,
+            self.feature_issues
+        )
+        ax = fig.axes[0]
+        legend = ax.get_legend()
+        self.assertIsNotNone(legend)
+        self.assertEqual(legend.get_title().get_text(), "State")
+    
+    def test_create_top_feature_requesters_chart_single_user(self):
+        """Test chart with single user"""
+        single_user = pd.Series([10], index=['user1'])
+        single_issue = pd.DataFrame({
+            'creator': ['user1'],
+            'state': ['State.open']
+        })
+        fig = self.visualizer.create_top_feature_requesters_chart(
+            single_user,
+            single_issue
+        )
+        self.assertIsNotNone(fig)
+    
+    def test_create_docs_issues_chart_success(self):
+        """Test successful creation of docs issues chart"""
+        fig = self.visualizer.create_docs_issues_chart(
+            self.status_counts,
+            self.avg_commenters,
+            "Docs Issues Chart"
+        )
+        self.assertIsNotNone(fig)
+        self.assertEqual(len(fig.axes), 2)
+        ax1 = fig.axes[0]
+        self.assertEqual(ax1.get_title(), "Docs Issues Chart")
+        self.assertEqual(ax1.get_xlabel(), "Month")
+        self.assertEqual(ax1.get_ylabel(), "Number of Doc Issues")
+    
+    def test_create_docs_issues_chart_dual_axis(self):
+        """Test that chart has dual y-axes"""
+        fig = self.visualizer.create_docs_issues_chart(
+            self.status_counts,
+            self.avg_commenters
+        )
+        self.assertEqual(len(fig.axes), 2)
+        ax1, ax2 = fig.axes
+        self.assertEqual(ax2.get_ylabel(), "Avg Unique Commenters per Doc Issue")
+    
+    def test_create_docs_issues_chart_legends(self):
+        """Test both legends are present"""
+        fig = self.visualizer.create_docs_issues_chart(
+            self.status_counts,
+            self.avg_commenters
+        )
+        ax1, ax2 = fig.axes
+        self.assertIsNotNone(ax1.get_legend())
+        self.assertIsNotNone(ax2.get_legend())
+    
+    def test_create_docs_issues_chart_single_month(self):
+        """Test chart with single month data"""
+        single_month = pd.DataFrame({
+            'open': [5],
+            'closed': [3]
+        }, index=pd.to_datetime(['2023-01']))
+        single_avg = pd.Series([2.5], index=single_month.index)
+        fig = self.visualizer.create_docs_issues_chart(
+            single_month,
+            single_avg
+        )
+        self.assertIsNotNone(fig)
+    
+    def test_create_docs_issues_chart_zero_commenters(self):
+        """Test chart with zero average commenters"""
+        zero_avg = pd.Series([0.0, 0.0, 0.0, 0.0], 
+                            index=self.status_counts.index)
+        fig = self.visualizer.create_docs_issues_chart(
+            self.status_counts,
+            zero_avg
+        )
+        self.assertIsNotNone(fig)
+    
+    def test_create_issues_created_per_user_chart_success(self):
+        """Test successful creation of issues per user chart"""
+        fig = self.visualizer.create_issues_created_per_user_chart(
+            self.issues_per_user,
+            self.all_counts,
+            "Top 40 Issues"
+        )
+        self.assertIsNotNone(fig)
+        ax = fig.axes[0]
+        self.assertEqual(ax.get_xlabel(), "Number of Issues Created")
+        self.assertEqual(ax.get_ylabel(), "Contributor's username")
+    
+    def test_create_issues_created_per_user_chart_percentage_calculation(self):
+        """Test that percentage is calculated correctly"""
+        fig = self.visualizer.create_issues_created_per_user_chart(
+            self.issues_per_user,
+            self.all_counts
+        )
+        total = self.all_counts.sum()
+        top_total = self.issues_per_user.sum()
+        expected_pct = (top_total / total) * 100
+        self.assertIsNotNone(fig)
+    
+    def test_create_issues_created_per_user_chart_sorted_bars(self):
+        """Test that bars are sorted by value"""
+        fig = self.visualizer.create_issues_created_per_user_chart(
+            self.issues_per_user,
+            self.all_counts
+        )
+        self.assertIsNotNone(fig)
+    
+    def test_create_issues_created_per_user_chart_top40_limit(self):
+        """Test that chart limits to top 40 users"""
+        large_series = pd.Series(range(100, 0, -1), 
+                                index=[f'user{i}' for i in range(100)])
+        fig = self.visualizer.create_issues_created_per_user_chart(
+            large_series,
+            large_series
+        )
+        self.assertIsNotNone(fig)
+    
+    def test_create_issues_created_per_user_chart_single_user(self):
+        """Test chart with single user"""
+        single = pd.Series([10], index=['user1'])
+        fig = self.visualizer.create_issues_created_per_user_chart(
+            single,
+            single
+        )
+        self.assertIsNotNone(fig)
+    
+    def test_create_top_active_users_per_year_chart_success(self):
+        """Test successful creation of active users per year chart"""
+        import plotly.graph_objects as go
+        yearly_data = {
+            2020: pd.DataFrame({
+                'user': ['user1', 'user2', 'user3'],
+                'activity': [100, 80, 60]
+            }),
+            2021: pd.DataFrame({
+                'user': ['user4', 'user5', 'user6'],
+                'activity': [120, 90, 70]
+            })
+        }
+        fig = self.visualizer.create_top_active_users_per_year_chart(yearly_data, top_n=10)
+        self.assertIsNotNone(fig)
+        self.assertEqual(len(fig.data), 2)
+    
+    def test_create_top_active_users_per_year_chart_empty_data(self):
+        """Test chart with empty yearly data"""
+        empty_data = {}
+        fig = self.visualizer.create_top_active_users_per_year_chart(empty_data)
+        self.assertIsNotNone(fig)
+        self.assertIn("No contributor activity", fig.layout.title.text)
+    
+    def test_create_top_active_users_per_year_chart_single_year(self):
+        """Test chart with single year"""
+        single_year = {
+            2023: pd.DataFrame({
+                'user': ['user1', 'user2'],
+                'activity': [50, 40]
+            })
+        }
+        fig = self.visualizer.create_top_active_users_per_year_chart(single_year)
+        self.assertIsNotNone(fig)
+        self.assertEqual(len(fig.data), 1)
+    
+    def test_create_top_active_users_per_year_chart_dropdown_menu(self):
+        """Test that dropdown menu is created"""
+        yearly_data = {
+            2020: pd.DataFrame({'user': ['user1'], 'activity': [100]}),
+            2021: pd.DataFrame({'user': ['user2'], 'activity': [120]})
+        }
+        fig = self.visualizer.create_top_active_users_per_year_chart(yearly_data)
+        self.assertIsNotNone(fig.layout.updatemenus)
+        self.assertEqual(len(fig.layout.updatemenus), 1)
+    
+    def test_create_top_active_users_per_year_chart_top_n_limit(self):
+        """Test that chart respects top_n parameter"""
+        large_year = {
+            2023: pd.DataFrame({
+                'user': [f'user{i}' for i in range(20)],
+                'activity': list(range(100, 80, -1))
+            })
+        }
+        fig = self.visualizer.create_top_active_users_per_year_chart(large_year, top_n=5)
+        self.assertIsNotNone(fig)
+    
+    def test_create_top_active_users_per_year_chart_sorted_years(self):
+        """Test that years are sorted chronologically"""
+        unsorted_data = {
+            2022: pd.DataFrame({'user': ['user1'], 'activity': [100]}),
+            2020: pd.DataFrame({'user': ['user2'], 'activity': [120]}),
+            2021: pd.DataFrame({'user': ['user3'], 'activity': [110]})
+        }
+        fig = self.visualizer.create_top_active_users_per_year_chart(unsorted_data)
+        self.assertIsNotNone(fig)
+    
+    def test_create_engagement_heatmap_chart_success(self):
+        """Test successful creation of engagement heatmap"""
+        fig = self.visualizer.create_engagement_heatmap_chart(self.heatmap_df)
+        self.assertIsNotNone(fig)
+        ax = fig.axes[0]
+        self.assertEqual(ax.get_title(), "Contributor Engagement Heatmap")
+        self.assertEqual(ax.get_xlabel(), "Hour of Day")
+        self.assertEqual(ax.get_ylabel(), "Day of Week")
+    
+    def test_create_engagement_heatmap_chart_normalization(self):
+        """Test that heatmap normalizes by row (percentage of day)"""
+        multi_day = pd.DataFrame(
+            [[10, 20, 30], [5, 10, 15]],
+            index=['Monday', 'Tuesday'],
+            columns=[0, 1, 2]
+        )
+        fig = self.visualizer.create_engagement_heatmap_chart(multi_day)
+        self.assertIsNotNone(fig)
+    
+    def test_create_engagement_heatmap_chart_zero_activity(self):
+        """Test heatmap with zero activity hours"""
+        zero_hours = pd.DataFrame(
+            [[0, 0, 10, 20]],
+            index=['Monday'],
+            columns=[0, 1, 2, 3]
+        )
+        fig = self.visualizer.create_engagement_heatmap_chart(zero_hours)
+        self.assertIsNotNone(fig)
+    
+    def test_create_engagement_heatmap_chart_single_day(self):
+        """Test heatmap with single day"""
+        single_day = pd.DataFrame(
+            [[5, 10, 15, 20]],
+            index=['Wednesday'],
+            columns=[0, 1, 2, 3]
+        )
+        fig = self.visualizer.create_engagement_heatmap_chart(single_day)
+        self.assertIsNotNone(fig)
+    
+    def test_create_engagement_heatmap_chart_all_zeros(self):
+        """Test heatmap with all zero values"""
+        all_zeros = pd.DataFrame(
+            [[0, 0, 0, 0]],
+            index=['Monday'],
+            columns=[0, 1, 2, 3]
+        )
+        fig = self.visualizer.create_engagement_heatmap_chart(all_zeros)
+        self.assertIsNotNone(fig)
+    
+    def test_create_lifecycle_chart_success(self):
+        """Test successful creation of lifecycle chart"""
+        fig = self.visualizer.create_lifecycle_chart(self.lifecycle_summary)
+        self.assertIsNotNone(fig)
+        ax = fig.axes[0]
+        self.assertEqual(ax.get_title(), "Contributor Lifecycle Stages")
+        self.assertEqual(ax.get_ylabel(), "Contributors")
+    
+    def test_create_lifecycle_chart_with_date(self):
+        """Test lifecycle chart with latest_date parameter"""
+        latest_date = pd.Timestamp('2023-06-15')
+        fig = self.visualizer.create_lifecycle_chart(
+            self.lifecycle_summary,
+            latest_date=latest_date
+        )
+        ax = fig.axes[0]
+        self.assertIn("as of Jun 2023", ax.get_title())
+    
+    def test_create_lifecycle_chart_colors(self):
+        """Test that lifecycle chart uses correct colors"""
+        fig = self.visualizer.create_lifecycle_chart(self.lifecycle_summary)
+        ax = fig.axes[0]
+        self.assertIsNotNone(fig)
+    
+    def test_create_lifecycle_chart_legend(self):
+        """Test that legend includes stage definitions"""
+        fig = self.visualizer.create_lifecycle_chart(self.lifecycle_summary)
+        ax = fig.axes[0]
+        legend = ax.get_legend()
+        self.assertIsNotNone(legend)
+    
+    def test_create_lifecycle_chart_single_stage(self):
+        """Test chart with single lifecycle stage"""
+        single_stage = pd.DataFrame({
+            'count': [15]
+        }, index=['Active'])
+        fig = self.visualizer.create_lifecycle_chart(single_stage)
+        self.assertIsNotNone(fig)
+    
+    def test_create_lifecycle_chart_annotations(self):
+        """Test that bars are annotated with counts"""
+        fig = self.visualizer.create_lifecycle_chart(self.lifecycle_summary)
+        self.assertIsNotNone(fig)
+    
+    @patch('matplotlib.pyplot.Figure.savefig')
+    def test_save_figure_matplotlib(self, mock_savefig):
+        """Test saving matplotlib figure"""
+        fig = self.visualizer.create_bug_closure_distribution_chart(
+            self.yearly_distribution,
+            "Test"
+        )
+        self.visualizer.save_figure(fig, "test.png")
+        mock_savefig.assert_called_once_with("test.png", bbox_inches="tight")
+    
+    def test_create_bug_closure_distribution_empty_dataframe(self):
+        """Test bug closure chart with empty DataFrame"""
+        empty_df = pd.DataFrame(columns=['year', 'top5_pct', 'rest_pct'])
+        fig = self.visualizer.create_bug_closure_distribution_chart(empty_df, "Empty")
+        self.assertIsNotNone(fig)
+    
+    def test_create_top_feature_requesters_chart_no_matching_users(self):
+        """Test feature requesters when no users match"""
+        no_match_issues = pd.DataFrame({
+            'creator': ['userX', 'userY'],
+            'state': ['State.open', 'State.closed']
+        })
+        fig = self.visualizer.create_top_feature_requesters_chart(
+            self.top_requesters,
+            no_match_issues
+        )
+        self.assertIsNotNone(fig)
+
+
 if __name__ == '__main__':
     unittest.main()
